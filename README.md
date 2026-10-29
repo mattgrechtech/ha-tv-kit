@@ -4,7 +4,7 @@
 
 Built to follow along with a video series, one step at a time. Everything is generic: you put your own entity IDs, IPs and names in one config file and one config block.
 
-> Status: early (v0.1). Tested on Home Assistant 2026.x with Google TV sets. Expect to adjust entity IDs and package lists for your devices.
+> Status: early (v0.1). Built from a working home setup (Home Assistant 2026.x with Google TV sets); the kit itself is being tested step by step in the video series. Expect to adjust entity IDs and package lists for your devices.
 
 ## Features
 

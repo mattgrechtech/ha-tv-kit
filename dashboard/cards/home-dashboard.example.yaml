@@ -1,0 +1,123 @@
+# ha-tv-kit · example card dashboard (Mushroom + Bubble Card). Run install-cards.sh first.
+# Create a dashboard (Settings → Dashboards → Add dashboard → New dashboard from scratch), open it,
+# Edit → three dots → Raw configuration editor → paste → Save.
+# Replace the placeholder entity IDs (media_player.living_room_tv, sensor.electricity_*, ...) with yours.
+# Add ?kiosk to the URL to hide Home Assistant's header and sidebar on a TV or tablet (Kiosk Mode card).
+title: Home
+views:
+  - title: Home
+    path: home
+    type: sections
+    max_columns: 3
+    sections:
+      # ---- Header: greeting + live chips --------------------------------
+      - type: grid
+        column_span: 3
+        cards:
+          - type: custom:mushroom-template-card
+            primary: >-
+              {% set h = now().hour %}Good {{ 'morning' if h < 12 else 'afternoon' if h < 18 else 'evening' }}
+            secondary: "{{ now().strftime('%A %-d %B') }}"
+            icon: mdi:home-heart
+            icon_color: amber
+            fill_container: true
+            grid_options: { columns: full }
+          - type: custom:mushroom-chips-card
+            alignment: center
+            grid_options: { columns: full }
+            chips:
+              - type: template
+                icon: mdi:currency-usd
+                icon_color: amber
+                content: "{{ states('sensor.electricity_cost_this_bill') | float(0) | round(2) }} this bill"
+                tap_action: { action: navigate, navigation_path: /energy }
+              - type: template
+                # EDIT the hours to your peak window
+                icon: "{{ 'mdi:clock-alert' if 16 <= now().hour < 21 else 'mdi:clock-check' }}"
+                icon_color: "{{ 'red' if 16 <= now().hour < 21 else 'green' }}"
+                content: "{{ 'Peak now (until 9pm)' if 16 <= now().hour < 21 else 'Off-peak' if 9 <= now().hour < 16 else 'Shoulder' }}"
+              - type: template
+                icon: mdi:television
+                content: >-
+                  {{ [states('media_player.living_room_tv'), states('media_player.bedroom_tv')]
+                     | select('in', ['on','playing','paused','idle']) | list | count }} TV on
+              - type: template
+                icon: mdi:lan-disconnect
+                icon_color: "{{ 'red' if states('sensor.tv_kit_watched_offline') | int(0) > 0 else 'green' }}"
+                content: "{{ states('sensor.tv_kit_watched_offline') | int(0) }} offline"
+
+      # ---- TVs -----------------------------------------------------------
+      - type: grid
+        cards:
+          - type: heading
+            heading: TVs
+            icon: mdi:television-classic
+          - type: custom:mushroom-media-player-card
+            entity: media_player.living_room_tv
+            name: Living room
+            use_media_info: true
+            media_controls: [on_off, play_pause_stop, next]
+            volume_controls: [volume_mute, volume_set]
+            tap_action: { action: navigate, navigation_path: "#living-tv" }
+          - type: custom:mushroom-media-player-card
+            entity: media_player.bedroom_tv
+            name: Bedroom
+            use_media_info: true
+            media_controls: [on_off, play_pause_stop, next]
+            volume_controls: [volume_mute, volume_set]
+
+      # ---- Energy --------------------------------------------------------
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: Energy
+            icon: mdi:lightning-bolt
+          - type: statistics-graph
+            title: Daily kWh, last 14 days
+            chart_type: bar
+            period: day
+            days_to_show: 14
+            stat_types: [change]
+            grid_options: { columns: full }
+            entities:
+              # EDIT: your long-term statistic IDs (Developer tools → Statistics)
+              - entity: sensor.grid_consumption_energy
+                name: Grid in
+              - entity: sensor.solar_export_energy
+                name: Solar out
+
+      # ---- Pop-up remote (opens when the living room TV card is tapped) --
+      - type: grid
+        cards:
+          - type: vertical-stack
+            cards:
+              - type: custom:bubble-card
+                card_type: pop-up
+                hash: "#living-tv"
+                name: Living room TV
+                icon: mdi:sofa
+              - type: custom:bubble-card
+                card_type: media-player
+                entity: media_player.living_room_tv
+              - type: horizontal-stack
+                cards:
+                  - type: custom:bubble-card
+                    card_type: button
+                    button_type: name
+                    name: Home
+                    icon: mdi:home
+                    tap_action: { action: perform-action, perform_action: remote.send_command, target: { entity_id: remote.living_room_tv }, data: { command: HOME } }
+                  - type: custom:bubble-card
+                    card_type: button
+                    button_type: name
+                    name: Back
+                    icon: mdi:arrow-left
+                    tap_action: { action: perform-action, perform_action: remote.send_command, target: { entity_id: remote.living_room_tv }, data: { command: BACK } }
+                  - type: custom:bubble-card
+                    card_type: button
+                    button_type: name
+                    name: Music
+                    icon: mdi:music
+                    # Launches an app by package name (here SmartTube; see docs/02-tv-prep.md)
+                    tap_action: { action: perform-action, perform_action: remote.turn_on, target: { entity_id: remote.living_room_tv }, data: { activity: org.smarttube.stable } }

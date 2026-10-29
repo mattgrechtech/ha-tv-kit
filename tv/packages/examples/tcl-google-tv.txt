@@ -1,0 +1,28 @@
+# ha-tv-kit · EXAMPLE debloat list for a TCL Google TV (one model, one firmware, one region).
+# It is an example to compare against, not a list to apply blindly. Other TCL models, and other brands
+# (Hisense, Sony, Philips, Xiaomi, ...), have different package names. Check every line against YOUR
+# TV's package list (tv/backups/<name>/packages-before.txt) and leave out anything you're unsure of.
+# Everything here is reversible with restore.ps1 / restore.sh.
+
+# ---- Tier 1: vendor ads, promos, demos and tutorials (usually safe) ----
+com.tcl.waterfall.overseas             # vendor content/ad channel
+com.tcl.channelplus                    # vendor free-channels app
+com.tcl.messagebox                     # vendor promo messages
+com.tcl.esticker                       # retail-store demo sticker
+com.tcl.exhibit                        # retail demo mode
+com.tcl.ocean.instructions             # tutorial
+com.tcl.repairguide                    # repair guide
+com.google.android.feedback            # Google feedback reporter
+com.google.android.play.games          # Play Games
+
+# ---- Tier 2: only if you don't use them (uncomment to include) ----
+# com.tcl.smartalexa                   # vendor voice-assistant bridge
+# com.tcl.magiconnectfree              # vendor phone-casting app
+# com.tcl.usercenter                   # vendor account
+# com.tcl.browser                      # vendor browser
+# com.tcl.gamebar                      # game overlay
+# com.google.android.youtube.tvmusic   # YouTube Music
+# com.google.android.apps.tv.dreamx    # Google ambient-mode screensaver (only if you use another screensaver)
+
+# ---- Tier 2: factory-installed streaming apps (region-specific; check yours) ----
+# Look in packages-before.txt for streaming apps you never use and add them here.

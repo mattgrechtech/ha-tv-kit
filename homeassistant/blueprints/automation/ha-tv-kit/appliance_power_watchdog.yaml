@@ -1,0 +1,110 @@
+blueprint:
+  name: Appliance watchdog (fridge stopped cooling or running non-stop)
+  description: >-
+    Watches an appliance through a smart plug that measures power (e.g. a fridge or freezer).
+
+    A fridge compressor normally cycles: roughly 50-150 W while running, a few watts when resting,
+    switching every 30-60 minutes. No run for hours means no power, a tripped circuit or a failed
+    compressor. Running for hours without a break usually means the door is ajar, the seals have
+    gone or the fridge is struggling. The alert clears itself when the pattern returns to normal.
+
+    The defaults are first guesses. Look at a few days of the plug's power history, then tune them.
+
+    Tip: hide the plug's on/off switch in Home Assistant and set its "power on after outage" option
+    to on, so nobody (and no automation) turns the fridge off by accident.
+  domain: automation
+  source_url: https://github.com/YOUR_GITHUB_USER/ha-tv-kit/blob/main/homeassistant/blueprints/automation/ha-tv-kit/appliance_power_watchdog.yaml
+  input:
+    power_sensor:
+      name: Power sensor (W)
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: power
+    appliance_name:
+      name: Appliance name
+      default: Fridge
+      selector: { text: }
+    running_watts:
+      name: Running above (W)
+      description: Power above this means the compressor (or motor) is running.
+      default: 25
+      selector: { number: { min: 1, max: 2000, unit_of_measurement: W, mode: box } }
+    stopped_for:
+      name: Alert if not running for
+      default: { hours: 3 }
+      selector: { duration: }
+    nonstop_for:
+      name: Alert if running non-stop for
+      default: { hours: 4 }
+      selector: { duration: }
+    tv_popup:
+      name: Also show on the TVs
+      default: false
+      selector: { boolean: }
+
+mode: single
+
+triggers:
+  - trigger: numeric_state
+    entity_id: !input power_sensor
+    below: !input running_watts
+    for: !input stopped_for
+    id: stopped
+  - trigger: numeric_state
+    entity_id: !input power_sensor
+    above: !input running_watts
+    for: !input nonstop_for
+    id: nonstop
+  - trigger: numeric_state
+    entity_id: !input power_sensor
+    above: !input running_watts
+    id: running
+  - trigger: numeric_state
+    entity_id: !input power_sensor
+    below: !input running_watts
+    id: resting
+
+variables:
+  sensor: !input power_sensor
+  name: !input appliance_name
+  tv: !input tv_popup
+  tag: "appliance-{{ sensor }}"
+  watts: "{{ states(sensor) | float(0) | round(0) | int }}"
+
+actions:
+  - choose:
+      - conditions: [{ condition: trigger, id: stopped }]
+        sequence:
+          - action: script.phone_notify
+            continue_on_error: true
+            data:
+              title: "{{ name }} may have stopped"
+              message: "It hasn't run for a long time (now {{ watts }} W). Check it's on and cold."
+              tag: "{{ tag }}"
+              level: time-sensitive
+          - if: [{ condition: template, value_template: "{{ tv }}" }]
+            then:
+              - action: script.tv_popup
+                continue_on_error: true
+                data: { title: "{{ name }} may have stopped", message: "Check it's on and cold.", icon: mdi:fridge-alert, color: "#FF5A3C", duration: 30 }
+      - conditions: [{ condition: trigger, id: nonstop }]
+        sequence:
+          - action: script.phone_notify
+            continue_on_error: true
+            data:
+              title: "{{ name }} running non-stop"
+              message: "It has run for hours without a break ({{ watts }} W). Is the door shut properly?"
+              tag: "{{ tag }}"
+              level: time-sensitive
+          - if: [{ condition: template, value_template: "{{ tv }}" }]
+            then:
+              - action: script.tv_popup
+                continue_on_error: true
+                data: { title: "{{ name }} running non-stop", message: "Is the door shut properly?", icon: mdi:fridge-alert, color: "#FF5A3C", duration: 30 }
+      - conditions: [{ condition: trigger, id: [running, resting] }]
+        sequence:
+          - action: script.phone_notify
+            continue_on_error: true
+            data: { message: clear_notification, tag: "{{ tag }}", clear: true }

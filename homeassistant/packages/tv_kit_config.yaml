@@ -1,0 +1,87 @@
+# =====================================================================================
+# ha-tv-kit · THE ONE FILE TO EDIT
+# =====================================================================================
+# Every value below is a placeholder. Replace it with your own values, then
+# Developer tools → YAML → "Check configuration" → restart Home Assistant.
+#
+# How to find your values:
+#   • Entity IDs:  Settings → Devices & services → Entities (or Developer tools → States)
+#   • TV IPs:      your router's device list. Give every TV a DHCP reservation so it keeps its IP.
+#   • Notify actions: Developer tools → Actions, type "notify.mobile_app" and pick your phone.
+#
+# The other kit packages read these values through sensor.tv_kit_config, so you only
+# change them here. Anything your home doesn't have can stay as the placeholder:
+# the automations skip missing entities.
+# =====================================================================================
+
+template:
+  - sensor:
+      - name: TV kit config
+        unique_id: tv_kit_config
+        icon: mdi:cog-outline
+        state: "ok"
+        attributes:
+          # How a TV reaches Home Assistant (used for camera snapshots and images in pop-ups).
+          # Use the LAN IP, not homeassistant.local: many TVs can't resolve .local names.
+          ha_url: "http://192.168.1.50:8123"
+
+          # TVs running TvOverlay: media_player entity → the TV's LAN IP.
+          # Pop-ups only go to TVs whose media_player is on.
+          tvs: >-
+            {{ {
+              'media_player.living_room_tv': '192.168.1.60',
+              'media_player.bedroom_tv': '192.168.1.61'
+            } }}
+
+          # Phones (or other notify actions) that get alerts.
+          phone_notify: "{{ ['notify.mobile_app_your_phone'] }}"
+
+          # Speakers for spoken announcements. Empty list = every Sonos speaker that's available.
+          speakers: "{{ [] }}"
+          # Text-to-speech entity (Settings → Voice assistants, or the Google Translate TTS integration).
+          tts_entity: tts.google_translate_en_com
+          # Quiet hours (24 h clock): normal announcements are skipped in this window; emergencies still play.
+          quiet_start: 21
+          quiet_end: 7
+          # Evening hour after which announcements are quieter, and the volumes (0-100).
+          evening_start: 19
+          volume_day: 35
+          volume_evening: 20
+          volume_emergency: 70
+
+          # Bins (Waste Collection Schedule integration). The sensor's value must be "days until next collection".
+          bin_days_sensor: sensor.waste_collection_schedule_next_bin_collection
+          bin_calendar: calendar.waste_collection_schedule_your_council
+
+          # Garage: a camera to attach to "garage left open" alerts (optional).
+          garage_camera: camera.garage_live_view
+
+          # Emergency feed: the `source` attribute of the geo_location entities to alert on.
+          # Example: qld_bushfire (Queensland, Australia). Others: see docs/03-tv-notifications.md.
+          emergency_sources: "{{ ['qld_bushfire'] }}"
+          emergency_title: Bushfire alert
+
+          # Label used to mark entities to watch for "something went offline" (docs/05-alerts.md).
+          watch_label: watch
+          watch_offline_minutes: 60
+
+  # ---- Aliases for trigger entities ------------------------------------------------
+  # Automation triggers can't read the attributes above, so the kit triggers on these
+  # stand-ins. Point each one at your real entity.
+  - binary_sensor:
+      - name: TV kit garage door
+        unique_id: tv_kit_garage_door
+        device_class: garage_door
+        # EDIT: your garage door contact/tilt sensor (on = open).
+        state: "{{ is_state('binary_sensor.garage_door', 'on') }}"
+        availability: "{{ has_value('binary_sensor.garage_door') }}"
+
+# ---- TvOverlay pop-ups -------------------------------------------------------------
+# TvOverlay listens on port 5001 with no authentication: keep guests on a guest Wi-Fi.
+rest_command:
+  tvoverlay_notify:
+    url: "http://{{ host }}:5001/notify"
+    method: POST
+    content_type: "application/json"
+    payload: "{{ payload | tojson }}"
+    timeout: 8

@@ -1,0 +1,70 @@
+# ha-tv-kit · garage left open.
+# Point binary_sensor.tv_kit_garage_door at your sensor in tv_kit_config.yaml.
+# Phone alert with the garage camera attached after 10 minutes open, repeated every 30 minutes,
+# cleared automatically when the door closes. Plus a 9pm check that also pops up on the TVs.
+# This only notifies: it never closes the door (see the safety notes in README.md).
+
+automation:
+  - id: tv_kit_garage_left_open
+    alias: Garage left open
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.tv_kit_garage_door
+        to: "on"
+        for: "00:10:00"   # EDIT: how long before the first alert
+    actions:
+      - repeat:
+          while:
+            - condition: state
+              entity_id: binary_sensor.tv_kit_garage_door
+              state: "on"
+          sequence:
+            - action: script.phone_notify
+              continue_on_error: true
+              data:
+                title: Garage door open
+                message: >-
+                  Open since {{ as_timestamp(states.binary_sensor.tv_kit_garage_door.last_changed) | timestamp_custom('%-I:%M %p') }}.
+                camera: "{{ state_attr('sensor.tv_kit_config', 'garage_camera') or '' }}"
+                tag: garage-open
+                level: time-sensitive
+            - wait_for_trigger:
+                - trigger: state
+                  entity_id: binary_sensor.tv_kit_garage_door
+                  to: "off"
+              timeout: "00:30:00"   # EDIT: repeat interval
+      - action: script.phone_notify
+        continue_on_error: true
+        data:
+          message: clear_notification
+          tag: garage-open
+          clear: true
+
+  - id: tv_kit_garage_open_at_night
+    alias: Garage still open at night
+    mode: single
+    triggers:
+      - trigger: time
+        at: "21:00:00"   # EDIT
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.tv_kit_garage_door
+        state: "on"
+    actions:
+      - action: script.phone_notify
+        continue_on_error: true
+        data:
+          title: Garage still open
+          message: The garage door is open and it's getting late.
+          camera: "{{ state_attr('sensor.tv_kit_config', 'garage_camera') or '' }}"
+          tag: garage-open
+          level: time-sensitive
+      - action: script.tv_popup
+        continue_on_error: true
+        data:
+          title: Garage still open
+          message: The garage door is open.
+          icon: mdi:garage-open-variant
+          color: "#FF5A3C"
+          duration: 30

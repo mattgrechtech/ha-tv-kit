@@ -1,0 +1,63 @@
+# ha-tv-kit · emergency feed alert (example: bushfires near home).
+#
+# IMPORTANT: this SUPPLEMENTS official warnings. It is not an emergency warning system. Feeds can be
+# late, incomplete or down. Keep your official emergency app, radio and local alerts.
+#
+# 1. Add a geo_location feed for your area. Example for Queensland, Australia (centred on your
+#    Home zone; radius in km). Uncomment, or use the feed for your own region:
+#
+# geo_location:
+#   - platform: qld_bushfire
+#     radius: 20
+#     categories: ["Emergency Warning", "Watch and Act", "Advice"]
+#
+#    Other feeds with geo_location entities include NSW Rural Fire Service, GeoNet NZ quakes,
+#    USGS earthquakes and generic GeoJSON/GeoRSS feeds. Check Settings → Devices & services →
+#    Add integration, and docs/03-tv-notifications.md.
+# 2. Put the feed's `source` attribute value in emergency_sources (tv_kit_config.yaml). Find it in
+#    Developer tools → States on any geo_location.* entity the feed creates.
+
+automation:
+  - id: tv_kit_emergency_feed
+    alias: Emergency feed · new incident near home
+    description: A new geo_location entity from a configured feed → critical phone alert, red TV pop-up, loud announcement.
+    mode: queued
+    max: 10
+    triggers:
+      - trigger: event
+        event_type: state_changed
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ trigger.event.data.entity_id.startswith('geo_location.')
+             and trigger.event.data.old_state is none
+             and trigger.event.data.new_state is not none
+             and trigger.event.data.new_state.attributes.source in (state_attr('sensor.tv_kit_config', 'emergency_sources') or []) }}
+    actions:
+      - variables:
+          s: "{{ trigger.event.data.new_state }}"
+          heading: "{{ state_attr('sensor.tv_kit_config', 'emergency_title') or 'Emergency alert' }}"
+          what: "{{ s.attributes.title | default(s.attributes.friendly_name | default('Incident')) }}"
+          km: "{{ s.state | float(0) | round(0) | int }}"
+          level: "{{ s.attributes.category | default('') }}"
+      - action: script.phone_notify
+        continue_on_error: true
+        data:
+          title: "{{ heading }} · {{ km }} km"
+          message: "{{ what }}{{ ' (' ~ level ~ ')' if level else '' }}. Check official warnings now."
+          level: critical
+          tag: "emergency-{{ trigger.event.data.entity_id }}"
+      - action: script.tv_popup
+        continue_on_error: true
+        data:
+          title: "{{ heading }} · {{ km }} km"
+          message: "{{ what }}. Check official warnings."
+          icon: mdi:fire-alert
+          color: "#FF2A1A"
+          duration: 60
+          include_off: false
+      - action: script.announce
+        continue_on_error: true
+        data:
+          priority: emergency
+          message: "{{ heading }}. {{ what }}, about {{ km }} kilometres away. Check official warnings."

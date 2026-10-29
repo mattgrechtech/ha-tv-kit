@@ -1,0 +1,194 @@
+# ha-tv-kit · reusable scripts: TV pop-up, phone alert, spoken announcement.
+# Nothing to edit here: values come from sensor.tv_kit_config (tv_kit_config.yaml).
+# Call them from your own automations, e.g.
+#   - action: script.tv_popup
+#     data: { title: Dinner, message: Dinner's ready, icon: mdi:silverware-fork-knife }
+
+script:
+  tv_popup:
+    alias: TV pop-up (TvOverlay)
+    description: Shows a pop-up on every configured TV that's on. One TV failing never stops the others.
+    mode: parallel
+    max: 20
+    icon: mdi:television-guide
+    fields:
+      title:
+        description: Heading
+        required: true
+        example: Front door
+        selector: { text: }
+      message:
+        description: Body text
+        example: Motion at 7:42 PM
+        selector: { text: }
+      image:
+        description: Image URL. A path starting with / (e.g. a camera's entity_picture or /local/...) is prefixed with ha_url.
+        selector: { text: }
+      icon:
+        description: Small icon (mdi:...)
+        example: mdi:cctv
+        selector: { icon: }
+      color:
+        description: Small icon colour (hex)
+        example: "#FF5A3C"
+        selector: { text: }
+      corner:
+        description: Screen corner
+        default: top_end
+        selector:
+          select:
+            options: [top_start, top_end, bottom_start, bottom_end]
+      duration:
+        description: Seconds on screen
+        default: 15
+        selector: { number: { min: 3, max: 300, unit_of_measurement: s } }
+      include_off:
+        description: Also send to TVs that are off or in standby (they usually can't show it)
+        default: false
+        selector: { boolean: }
+    sequence:
+      - variables:
+          cfg: sensor.tv_kit_config
+          tv_map: "{{ state_attr(cfg, 'tvs') or {} }}"
+          hosts: >-
+            {% set ns = namespace(on=[]) %}
+            {% for e, ip in tv_map.items() %}
+              {% if (include_off | default(false)) or states(e) not in ['off', 'unavailable', 'unknown', 'standby'] %}
+                {% set ns.on = ns.on + [ip] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.on }}
+          img: >-
+            {% set i = image | default('') | string %}
+            {{ (state_attr(cfg, 'ha_url') ~ i) if i.startswith('/') else i }}
+          payload: >-
+            {% set p = {'title': title, 'message': message | default(''),
+                        'corner': corner | default('top_end'), 'duration': duration | default(15) | int} %}
+            {% if img %}{% set p = dict(p, image=img) %}{% endif %}
+            {% if icon is defined and icon %}{% set p = dict(p, smallIcon=icon) %}{% endif %}
+            {% if color is defined and color %}{% set p = dict(p, smallIconColor=color) %}{% endif %}
+            {{ p }}
+      - condition: template
+        value_template: "{{ hosts | count > 0 }}"
+      - repeat:
+          for_each: "{{ hosts }}"
+          sequence:
+            - action: rest_command.tvoverlay_notify
+              continue_on_error: true
+              data:
+                host: "{{ repeat.item }}"
+                payload: "{{ payload }}"
+
+  phone_notify:
+    alias: Phone alert
+    description: Sends a notification to every phone in phone_notify. Set clear to remove an earlier alert with the same tag.
+    mode: parallel
+    max: 20
+    icon: mdi:cellphone-message
+    fields:
+      title: { selector: { text: } }
+      message: { required: true, selector: { text: } }
+      tag:
+        description: Alerts with the same tag replace each other (and can be cleared)
+        selector: { text: }
+      image:
+        description: Image path or URL
+        selector: { text: }
+      camera:
+        description: Camera entity to attach (live preview on iOS/Android)
+        selector: { entity: { domain: camera } }
+      level:
+        description: normal, time-sensitive or critical (critical breaks through silent mode)
+        default: normal
+        selector: { select: { options: [normal, time-sensitive, critical] } }
+      clear:
+        description: Remove the alert with this tag instead of sending one
+        default: false
+        selector: { boolean: }
+    sequence:
+      - variables:
+          targets: "{{ state_attr('sensor.tv_kit_config', 'phone_notify') or [] }}"
+          lvl: "{{ level | default('normal') }}"
+          extra: >-
+            {% set d = {'group': 'ha-tv-kit'} %}
+            {% if tag is defined and tag %}{% set d = dict(d, tag=tag) %}{% endif %}
+            {% if image is defined and image %}{% set d = dict(d, image=image) %}{% endif %}
+            {% if camera is defined and camera %}{% set d = dict(d, entity_id=camera) %}{% endif %}
+            {% if lvl == 'critical' %}
+              {% set d = dict(d, push={'sound': {'name': 'default', 'critical': 1, 'volume': 1.0}},
+                              ttl=0, priority='high', channel='alarm_stream') %}
+            {% elif lvl == 'time-sensitive' %}
+              {% set d = dict(d, push={'interruption-level': 'time-sensitive'}, ttl=0, priority='high') %}
+            {% endif %}
+            {{ d }}
+      - repeat:
+          for_each: "{{ targets }}"
+          sequence:
+            - if:
+                - condition: template
+                  value_template: "{{ clear | default(false) }}"
+              then:
+                - action: "{{ repeat.item }}"
+                  continue_on_error: true
+                  data:
+                    message: clear_notification
+                    data: { tag: "{{ tag }}" }
+              else:
+                - action: "{{ repeat.item }}"
+                  continue_on_error: true
+                  data:
+                    title: "{{ title | default('Home') }}"
+                    message: "{{ message }}"
+                    data: "{{ extra }}"
+
+  announce:
+    alias: Announce on speakers
+    description: >-
+      Speaks a message on the configured speakers (Sonos music ducks and resumes). Normal messages
+      are quieter in the evening and skipped in quiet hours; emergency messages play loud, any time.
+    mode: queued
+    icon: mdi:bullhorn
+    fields:
+      message:
+        description: What to say
+        required: true
+        example: Bins out tonight, recycling week
+        selector: { text: }
+      priority:
+        description: normal or emergency
+        default: normal
+        selector: { select: { options: [normal, emergency] } }
+      speakers:
+        description: Speakers to use (default = the speakers in the kit config, or every Sonos speaker)
+        selector: { entity: { domain: media_player, multiple: true } }
+    sequence:
+      - variables:
+          cfg: sensor.tv_kit_config
+          emergency: "{{ (priority | default('normal')) == 'emergency' }}"
+          hour: "{{ now().hour }}"
+          q_start: "{{ state_attr(cfg, 'quiet_start') | int(21) }}"
+          q_end: "{{ state_attr(cfg, 'quiet_end') | int(7) }}"
+          quiet: >-
+            {{ (hour >= q_start or hour < q_end) if q_start > q_end else (q_start <= hour < q_end) }}
+          targets: >-
+            {% set cfg_list = state_attr(cfg, 'speakers') or [] %}
+            {% set chosen = speakers if speakers is defined and speakers
+               else (cfg_list if cfg_list else integration_entities('sonos') | select('match', 'media_player\.') | list) %}
+            {{ chosen | reject('is_state', 'unavailable') | list }}
+          volume: >-
+            {% if emergency %}{{ state_attr(cfg, 'volume_emergency') | int(70) }}
+            {% elif hour >= state_attr(cfg, 'evening_start') | int(19) %}{{ state_attr(cfg, 'volume_evening') | int(20) }}
+            {% else %}{{ state_attr(cfg, 'volume_day') | int(35) }}{% endif %}
+          tts: "{{ state_attr(cfg, 'tts_entity') or 'tts.google_translate_en_com' }}"
+      - condition: template
+        value_template: "{{ targets | count > 0 and (emergency or not quiet) }}"
+      - action: media_player.play_media
+        continue_on_error: true
+        target:
+          entity_id: "{{ targets }}"
+        data:
+          media_content_type: music
+          media_content_id: "media-source://tts/{{ tts }}?message={{ message | urlencode }}"
+          announce: true
+          extra:
+            volume: "{{ volume | int }}"

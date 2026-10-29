@@ -1,0 +1,92 @@
+blueprint:
+  name: Camera motion or doorbell → TV pop-up
+  description: >-
+    When a camera detects motion (or a doorbell is pressed), show a pop-up with a live snapshot on
+    every TV that's on, through the ha-tv-kit `script.tv_popup`. Optional phone alert. A cooldown
+    stops a busy driveway flooding the screen.
+
+    The snapshot is the camera's `entity_picture`: a short-lived, tokenised link served by Home
+    Assistant. Never copy camera images into /config/www (readable on your LAN without a login).
+  domain: automation
+  source_url: https://github.com/YOUR_GITHUB_USER/ha-tv-kit/blob/main/homeassistant/blueprints/automation/ha-tv-kit/camera_motion_tv_popup.yaml
+  input:
+    trigger_entity:
+      name: Motion or doorbell
+      description: An event entity (e.g. event.front_door_motion, event.front_door_ding) or a motion binary_sensor.
+      selector:
+        entity:
+          filter:
+            - domain: event
+            - domain: binary_sensor
+    camera_entity:
+      name: Camera for the snapshot
+      description: For battery cameras with no live still, the "last recording" camera often works better.
+      selector:
+        entity:
+          filter:
+            - domain: camera
+    title:
+      name: Pop-up title
+      default: Front door
+      selector: { text: }
+    message_prefix:
+      name: Message
+      description: The time is added after this text.
+      default: Motion at
+      selector: { text: }
+    duration:
+      name: Seconds on screen
+      default: 15
+      selector: { number: { min: 5, max: 120, unit_of_measurement: s } }
+    cooldown:
+      name: Cooldown (minutes)
+      default: 3
+      selector: { number: { min: 0, max: 60, unit_of_measurement: min } }
+    phone_alert:
+      name: Also alert phones
+      default: false
+      selector: { boolean: }
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: state
+    entity_id: !input trigger_entity
+    not_from: [unavailable, unknown]
+
+conditions:
+  # Event entities change state (a timestamp) on every press/motion; binary sensors only count when they turn on.
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state is not none and
+         (trigger.to_state.domain == 'event' or trigger.to_state.state == 'on') }}
+
+variables:
+  camera: !input camera_entity
+  phone: !input phone_alert
+  prefix: !input message_prefix
+  cooldown_min: !input cooldown
+
+actions:
+  - action: script.tv_popup
+    continue_on_error: true
+    data:
+      title: !input title
+      message: "{{ prefix }} {{ now().strftime('%-I:%M %p') }}"
+      image: "{{ state_attr(camera, 'entity_picture') or '' }}"
+      icon: mdi:cctv
+      duration: !input duration
+  - if:
+      - condition: template
+        value_template: "{{ phone }}"
+    then:
+      - action: script.phone_notify
+        continue_on_error: true
+        data:
+          title: !input title
+          message: "{{ prefix }} {{ now().strftime('%-I:%M %p') }}"
+          camera: "{{ camera }}"
+          tag: "camera-{{ camera }}"
+  - delay:
+      minutes: "{{ cooldown_min | int(3) }}"

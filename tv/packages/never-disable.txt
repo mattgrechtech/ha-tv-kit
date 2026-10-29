@@ -1,0 +1,33 @@
+# ha-tv-kit · packages the debloat scripts REFUSE to disable.
+# Each line is a substring: any package whose name contains it is protected.
+# Disabling these can stop the TV booting, break HDMI inputs, the remote, casting, the keyboard or updates.
+# Add your own vendor's critical packages here. Don't remove lines unless you know exactly why.
+
+# Android/Google core
+com.google.android.gms          # Play Services
+com.google.android.gsf          # Google Services Framework
+com.android.vending             # Play Store
+webview                         # Android System WebView
+systemui
+packageinstaller
+permissioncontroller
+providers                       # content providers (media, TV listings, settings, ...)
+inputmethod                     # keyboards
+leanbackime                     # on-screen keyboard
+overlay                         # vendor resource overlays
+
+# TV basics
+settings                        # TV and vendor settings apps
+setupwraith                     # Google TV setup wizard
+setupwizard
+launcherx                       # Google TV home screen (it re-enables itself anyway)
+tvlauncher                      # Android TV home screen
+katniss                         # voice search (the remote's microphone button)
+mediashell                      # Chromecast built-in
+bluetooth
+remote                          # remote-control services
+tvinput                         # HDMI/tuner inputs
+tuner
+hdmi
+partnercustomizer               # vendor home-screen partner config
+factory                         # factory/service apps

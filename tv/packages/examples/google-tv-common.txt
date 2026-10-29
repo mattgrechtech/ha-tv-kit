@@ -1,0 +1,12 @@
+# ha-tv-kit · EXAMPLE debloat list: Google packages found on many Google TV / Android TV models.
+# Check every line against YOUR TV's package list (tv/backups/<name>/packages-before.txt) first.
+# Package names, and what they do, change between models, regions and firmware versions.
+# Everything here is reversible with restore.ps1 / restore.sh.
+
+# ---- Tier 1: usually safe ----
+com.google.android.feedback            # "Send feedback" reporter
+com.google.android.play.games          # Play Games
+
+# ---- Tier 2: only if you don't use it (uncomment to include) ----
+# com.google.android.youtube.tvmusic   # YouTube Music for TV
+# com.google.android.apps.tv.dreamx    # Google ambient-mode screensaver: only if you set another screensaver (e.g. Aerial Views)

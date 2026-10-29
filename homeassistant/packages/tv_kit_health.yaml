@@ -1,0 +1,82 @@
+# ha-tv-kit · "something broke" alerts.
+#
+# 1. Offline: give the label "watch" (Settings → Labels) to every entity you care about: a camera,
+#    each TV, your energy sensor, the fridge plug, the bin schedule. When any of them has been
+#    unavailable for watch_offline_minutes (tv_kit_config.yaml) you get one phone alert listing them;
+#    it clears when they're all back. No entity IDs to edit here.
+# 2. Errors: a phone alert when an automation, script, rest_command or custom integration logs an
+#    ERROR (at most one per 10 minutes).
+
+template:
+  - sensor:
+      - name: TV kit watched offline
+        unique_id: tv_kit_watched_offline
+        icon: mdi:lan-disconnect
+        unit_of_measurement: entities
+        state: >-
+          {{ label_entities(state_attr('sensor.tv_kit_config', 'watch_label') or 'watch')
+             | select('is_state', ['unavailable', 'unknown']) | list | count }}
+        attributes:
+          names: >-
+            {% set ns = namespace(n=[]) %}
+            {% for e in label_entities(state_attr('sensor.tv_kit_config', 'watch_label') or 'watch')
+                 | select('is_state', ['unavailable', 'unknown']) %}
+              {% set ns.n = ns.n + [state_attr(e, 'friendly_name') or e] %}
+            {% endfor %}
+            {{ ns.n }}
+
+automation:
+  - id: tv_kit_health_offline
+    alias: System health · something went offline
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: sensor.tv_kit_watched_offline
+    actions:
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ states('sensor.tv_kit_watched_offline') | int(0) == 0 }}"
+            sequence:
+              - action: script.phone_notify
+                continue_on_error: true
+                data: { message: clear_notification, tag: health-offline, clear: true }
+        default:
+          # Wait out short blips (restarts, Wi-Fi hiccups); mode: restart starts the wait again
+          # whenever the list changes.
+          - delay:
+              minutes: "{{ state_attr('sensor.tv_kit_config', 'watch_offline_minutes') | int(60) }}"
+          - condition: template
+            value_template: "{{ states('sensor.tv_kit_watched_offline') | int(0) > 0 }}"
+          - action: script.phone_notify
+            continue_on_error: true
+            data:
+              title: "Home Assistant: {{ states('sensor.tv_kit_watched_offline') }} offline"
+              message: "{{ state_attr('sensor.tv_kit_watched_offline', 'names') | join(', ') }}. Check Settings → Devices & services."
+              tag: health-offline
+
+  - id: tv_kit_health_errors
+    alias: System health · automation or integration error
+    mode: single
+    max_exceeded: silent
+    triggers:
+      - trigger: event
+        event_type: system_log_event
+        event_data: { level: ERROR }
+    conditions:
+      - condition: template
+        value_template: >-
+          {% set n = trigger.event.data.name | default('') %}
+          {{ n.startswith('homeassistant.components.automation') or n.startswith('homeassistant.components.script')
+             or n.startswith('homeassistant.components.rest_command') or n.startswith('custom_components.') }}
+    actions:
+      - variables:
+          src: "{{ trigger.event.data.name | default('unknown') | replace('homeassistant.components.', '') | replace('custom_components.', '') }}"
+          msg: "{{ (trigger.event.data.message | default(['']))[0] | string | truncate(180) }}"
+      - action: script.phone_notify
+        continue_on_error: true
+        data:
+          title: "Home Assistant error: {{ src }}"
+          message: "{{ msg }} (Settings → System → Logs)"
+          tag: health-errors
+      - delay: "00:10:00"

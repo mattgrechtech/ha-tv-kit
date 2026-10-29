@@ -1,0 +1,17 @@
+# TV backups describe your devices: keep them out of git
+tv/backups/
+
+# Your own house renders (keep private unless you mean to share them)
+dashboard/house-twin/*.jpg
+dashboard/house-twin/*.jpeg
+
+# Local copies of your real config
+*.local.yaml
+secrets.yaml
+.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+__pycache__/

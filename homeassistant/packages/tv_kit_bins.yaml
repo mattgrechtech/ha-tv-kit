@@ -1,0 +1,58 @@
+# ha-tv-kit · bin night reminder.
+# Needs the Waste Collection Schedule integration (community) set up for your council, and the
+# three bin images copied to /config/www/tv/ (see docs/03-tv-notifications.md).
+# Entity IDs come from bin_days_sensor and bin_calendar in tv_kit_config.yaml.
+#
+# Bin colours differ between councils. The example mapping below is common in Australia:
+# red lid = general waste (every week), yellow = recycling, green = garden/organics. Change the
+# keywords and image names in `week` and `bin_img` to match your bins.
+
+automation:
+  - id: tv_kit_bin_night
+    alias: Bin night reminder
+    description: The evening before collection, a phone alert and a TV pop-up naming the bins.
+    mode: single
+    triggers:
+      - trigger: time
+        at: "18:00:00"   # EDIT: reminder time
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ states(state_attr('sensor.tv_kit_config', 'bin_days_sensor')) | int(-1) == 1 }}
+    actions:
+      - variables:
+          cal_entity: "{{ state_attr('sensor.tv_kit_config', 'bin_calendar') }}"
+      - action: calendar.get_events
+        target:
+          entity_id: "{{ cal_entity }}"
+        data:
+          start_date_time: "{{ (today_at('00:00') + timedelta(days=1)).isoformat() }}"
+          duration: { hours: 24 }
+        response_variable: cal
+        continue_on_error: true
+      - variables:
+          types: "{{ (cal[cal_entity].events | map(attribute='summary') | list) if cal is defined and cal_entity in cal else [] }}"
+          joined: "{{ (types | join(' ')) | lower }}"
+          week: >-
+            {% if 'recycl' in joined %}Recycling week
+            {% elif 'green' in joined or 'garden' in joined or 'organic' in joined %}Green bin week
+            {% else %}Bin night{% endif %}
+          bin_img: >-
+            {% if 'recycl' in joined %}/local/tv/bin-yellow.png
+            {% elif 'green' in joined or 'garden' in joined or 'organic' in joined %}/local/tv/bin-green.png
+            {% else %}/local/tv/bin-red.png{% endif %}
+          bins: "{{ types | join(' + ') if types else 'Check the bins' }}"
+      - action: script.phone_notify
+        continue_on_error: true
+        data:
+          title: "Bins out tonight: {{ week }}"
+          message: "{{ bins }}"
+          image: "{{ bin_img }}"
+          tag: bin-night
+      - action: script.tv_popup
+        continue_on_error: true
+        data:
+          title: Bins out tonight
+          message: "{{ week }}: {{ bins }}"
+          image: "{{ bin_img }}"
+          duration: 20

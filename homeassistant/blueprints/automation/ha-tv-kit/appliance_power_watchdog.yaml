@@ -13,7 +13,7 @@ blueprint:
     Tip: hide the plug's on/off switch in Home Assistant and set its "power on after outage" option
     to on, so nobody (and no automation) turns the fridge off by accident.
   domain: automation
-  source_url: https://github.com/YOUR_GITHUB_USER/ha-tv-kit/blob/main/homeassistant/blueprints/automation/ha-tv-kit/appliance_power_watchdog.yaml
+  source_url: https://github.com/mattgrechtech/ha-tv-kit/blob/main/homeassistant/blueprints/automation/ha-tv-kit/appliance_power_watchdog.yaml
   input:
     power_sensor:
       name: Power sensor (W)

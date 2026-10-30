@@ -35,7 +35,9 @@ rest_command.tvoverlay_notify  ──HTTP POST :5001──▶  TvOverlay on the 
 
 > **Security:** TvOverlay listens on port **5001 with no authentication**. Anything on your network can put text and images on your TV. That's acceptable on a home network you trust; put visitors and smart gadgets you don't trust on a **guest Wi-Fi** that can't reach the TVs, and never forward port 5001 from the internet.
 
-Other pop-up apps exist (PiPup, "Notifications for Android TV"), but at the time of writing PiPup is no longer distributed and the other is region-locked in some countries. TvOverlay's API: `title`, `message`, `image` (URL, MDI icon or base64), `video` (RTSP/HLS), `smallIcon`, `smallIconColor`, `corner` (`top_start`, `top_end`, `bottom_start`, `bottom_end`), `duration` (seconds).
+Other pop-up apps exist (PiPup, "Notifications for Android TV"), but at the time of writing PiPup is no longer distributed and the other is region-locked in some countries. **Or use TV Kiosk:** the companion app [TV Kiosk](https://github.com/mattgrechtech/ha-tv-kiosk) can answer the same `POST /notify` on port 5001 (turn on *TvOverlay-compatible pop-ups* in its settings and stop TvOverlay on that TV), so `rest_command.tvoverlay_notify` and `script.tv_popup` don't change. It is pre-alpha; see its [Home Assistant set-up](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/home-assistant.md).
+
+TvOverlay's API: `title`, `message`, `image` (URL, MDI icon or base64), `video` (RTSP/HLS), `smallIcon`, `smallIconColor`, `corner` (`top_start`, `top_end`, `bottom_start`, `bottom_end`), `duration` (seconds).
 
 ## Step 2: configure the kit
 

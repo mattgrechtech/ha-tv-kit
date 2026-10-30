@@ -8,7 +8,7 @@ blueprint:
     The snapshot is the camera's `entity_picture`: a short-lived, tokenised link served by Home
     Assistant. Never copy camera images into /config/www (readable on your LAN without a login).
   domain: automation
-  source_url: https://github.com/YOUR_GITHUB_USER/ha-tv-kit/blob/main/homeassistant/blueprints/automation/ha-tv-kit/camera_motion_tv_popup.yaml
+  source_url: https://github.com/mattgrechtech/ha-tv-kit/blob/main/homeassistant/blueprints/automation/ha-tv-kit/camera_motion_tv_popup.yaml
   input:
     trigger_entity:
       name: Motion or doorbell

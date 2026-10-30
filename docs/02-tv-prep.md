@@ -124,5 +124,5 @@ Next: [TV notifications](03-tv-notifications.md).
 ## Gotchas
 
 - **TVs that are off don't answer** on the network; turn them on (or enable "network standby" / "wake on LAN" in the TV's settings) before running scripts.
-- Android's own notifications don't pop up on Google TV, which is why the kit uses TvOverlay.
+- Android's own notifications don't pop up on Google TV, which is why the kit uses TvOverlay (or the companion [TV Kiosk](https://github.com/mattgrechtech/ha-tv-kiosk) app, whose own adb provisioning scripts grant the same overlay permission).
 - After a big TV firmware update, run `backup` again (it keeps the original and writes a timestamped copy) and check that your disabled packages are still disabled.

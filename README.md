@@ -13,10 +13,20 @@ Built to follow along with a video series, one step at a time. Everything is gen
 | 🏠 | Home Assistant on a mini PC, Raspberry Pi or a Windows Hyper-V VM (script included), with backups from day one | [01 Install](docs/01-install-home-assistant.md) |
 | 📺 | Google/Android TV prep over adb: backup, **reversible** debloat with a protected-package list and restore scripts (PowerShell + bash), faster animations, Aerial Views photo screensaver, background music, Projectivy | [02 TV prep](docs/02-tv-prep.md) |
 | 🔔 | TV pop-ups through TvOverlay: camera/doorbell snapshot (blueprint), bin night, garage left open, emergency-feed alerts (bushfire example) | [03 TV notifications](docs/03-tv-notifications.md) |
-| 🖼️ | The **House twin** panel: your house as an illustration, live (TVs, cameras, garage, appliances, bins, tariff, emergency banner), an energy replay and cost heatmap, and a full-screen TV mode. Kiosk guidance (Fully Kiosk or Kite AOS) and no-login TV setup | [04 TV dashboard](docs/04-tv-dashboard.md) |
+| 🖼️ | The **House twin** panel: your house as an illustration, live (TVs, cameras, garage, appliances, bins, tariff, emergency banner), an energy replay and cost heatmap, and a full-screen TV mode. Kiosk guidance (Fully Kiosk, Kite AOS or the companion [TV Kiosk](https://github.com/mattgrechtech/ha-tv-kiosk) app) and no-login TV setup | [04 TV dashboard](docs/04-tv-dashboard.md) |
 | 🛠️ | "Something broke" alerts (label what to watch), error alerts, an appliance watchdog (fridge not cooling / running non-stop) with tunable thresholds, speaker announcements with quiet hours | [05 Alerts](docs/05-alerts.md) |
 | ⚡ | Energy dashboard done right, smart plugs, tariff rates as config; retailer integrations as examples | [06 Energy](docs/06-energy.md) |
 | 🤖 | Optional: Claude manages Home Assistant through ha-mcp, reads freely, **asks before every change** | [07 AI](docs/07-ai-with-ha-mcp.md) |
+
+## Companion app: TV Kiosk
+
+[**TV Kiosk**](https://github.com/mattgrechtech/ha-tv-kiosk) (Apache-2.0) is a sister project: one free, open-source Android TV / Google TV app that does what this kit currently uses three tools for. It shows the dashboard full screen, draws pop-ups over any app, and is controlled from Home Assistant over REST or MQTT (with HA discovery), so there's no paid kiosk licence and no adb needed for day-to-day control.
+
+- It speaks TvOverlay's `/notify` format on port 5001, so the kit's `script.tv_popup`, blueprints and automations work without changes.
+- Its sign-in can use the kit's `trusted_networks` TV user ([docs/04](docs/04-tv-dashboard.md#no-login-on-the-tv-trusted_networks-optional)).
+- Its adb provisioning scripts follow the same pattern as the kit's `tv/` scripts.
+
+The kit works without it (Fully Kiosk or Kite AOS plus TvOverlay), and the app works without the kit. **TV Kiosk is pre-alpha**: check its README for its current status before relying on it.
 
 ## Prerequisites
 

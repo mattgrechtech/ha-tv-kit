@@ -41,9 +41,9 @@ A kiosk browser opens one URL full screen, keeps the screen awake, reloads after
 | | **Fully Kiosk Browser** | **Kite AOS** | **TV Kiosk** (companion app) |
 |---|---|---|---|
 | Licence | Proprietary; core features free, **PLUS** licence (paid, per device) for kiosk mode, motion detection, remote admin | Open source (Apache-2.0) | Open source (Apache-2.0) |
-| Android TV | Yes (Play Store or its own APK) | Has an Android TV build: check the project's releases for your device | Built for Android TV / Google TV |
-| Home Assistant | Official **Fully Kiosk Browser** integration: screen on/off, brightness, load URL, screensaver, sensors | Talks to HA over **MQTT**: needs the Mosquitto broker app and the MQTT integration | **REST** (token) and **MQTT** with HA discovery; also draws pop-ups (TvOverlay-compatible `/notify`), so it can replace TvOverlay too |
-| Best for | Easiest setup, most features | Free and open source, no vendor licence | One app for dashboard + pop-ups + control. **Pre-alpha**: check its status first |
+| Android TV | Yes (Play Store or its own APK) | Has an Android TV build: check the project's releases for your device | Built for Android TV / Google TV; tested so far on one TCL Google TV (Android 14) |
+| Home Assistant | Official **Fully Kiosk Browser** integration: screen on/off, brightness, load URL, screensaver, sensors | Talks to HA over **MQTT**: needs the Mosquitto broker app and the MQTT integration | **REST** (token) and **MQTT** with HA discovery; also draws pop-ups (with an optional TvOverlay-compatible mode), so it can replace TvOverlay too |
+| Best for | Easiest setup, most features | Free and open source, no vendor licence | One app for dashboard, pop-ups and control. **Pre-alpha**, coming soon: check its status first |
 
 There are other open-source kiosk apps with HA support (for example FreeKiosk); check their Android TV support before choosing. Install apps from the Play Store or the project's own GitHub releases only.
 
@@ -60,7 +60,15 @@ There are other open-source kiosk apps with HA support (for example FreeKiosk); 
 
 ### TV Kiosk
 
-[TV Kiosk](https://github.com/mattgrechtech/ha-tv-kiosk) is this kit's sister project. Follow its README to install it, then its [Home Assistant set-up](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/home-assistant.md) guide for REST commands, MQTT and moving the kit's pop-ups over. Set its dashboard URL to `http://192.168.1.50:8123/house?tv=1`. For sign-in, either use the trusted_networks TV user below or sign in once on the TV from the app's settings. Its REST and MQTT reference is in [docs/api.md](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/api.md).
+TV Kiosk is this kit's sister project, **coming soon** at [ha-tv-kiosk](https://github.com/mattgrechtech/ha-tv-kiosk). The app and repo names are working titles, and the links will work once it's published. What it does today:
+
+- **Settings:** a menu down the left with a *Choose a dashboard* picker, so there's no URL to type with the remote. HA's header and sidebar are hidden.
+- **Sign-in:** *Sign in once on this TV* by default. With the trusted_networks TV user below, it's a single click.
+- **Remote:** jumps between clickable items by default. An on-screen pointer is optional.
+- **Crashes:** it restarts itself.
+- **Control:** REST with a token, and MQTT with HA discovery. See its [Home Assistant set-up](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/home-assistant.md) and [API](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/api.md) guides.
+
+Planned but not built yet: background music, rotating between pages, and a mode for general websites.
 
 ## No login on the TV: trusted_networks (optional)
 

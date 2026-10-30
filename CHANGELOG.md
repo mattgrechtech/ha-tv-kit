@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [Unreleased]
 
 ### Added
-- Cross-references to the companion app [TV Kiosk](https://github.com/mattgrechtech/ha-tv-kiosk): README section, a third kiosk option in docs/04, the TvOverlay-compatible pop-up route in docs/03.
+- Cross-references to the companion app TV Kiosk (coming soon at https://github.com/mattgrechtech/ha-tv-kiosk; working names): README section, a third kiosk option in docs/04, the TvOverlay-compatible pop-up route in docs/03.
 
 ### Changed
 - Blueprint `source_url` now points at the published repository.

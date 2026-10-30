@@ -35,7 +35,12 @@ rest_command.tvoverlay_notify  ──HTTP POST :5001──▶  TvOverlay on the 
 
 > **Security:** TvOverlay listens on port **5001 with no authentication**. Anything on your network can put text and images on your TV. That's acceptable on a home network you trust; put visitors and smart gadgets you don't trust on a **guest Wi-Fi** that can't reach the TVs, and never forward port 5001 from the internet.
 
-Other pop-up apps exist (PiPup, "Notifications for Android TV"), but at the time of writing PiPup is no longer distributed and the other is region-locked in some countries. **Or use TV Kiosk:** the companion app [TV Kiosk](https://github.com/mattgrechtech/ha-tv-kiosk) can answer the same `POST /notify` on port 5001 (turn on *TvOverlay-compatible pop-ups* in its settings and stop TvOverlay on that TV), so `rest_command.tvoverlay_notify` and `script.tv_popup` don't change. It is pre-alpha; see its [Home Assistant set-up](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/home-assistant.md).
+Other pop-up apps exist (PiPup, "Notifications for Android TV"), but at the time of writing PiPup is no longer distributed and the other is region-locked in some countries. **Or use TV Kiosk (coming soon):** the companion app [TV Kiosk](https://github.com/mattgrechtech/ha-tv-kiosk) draws the same pop-ups, and camera snapshots show over any app, including YouTube. Two ways to send to it:
+
+- **No HA changes:** turn on its *TvOverlay-compatible* mode (off by default). It answers the same `POST /notify` on port 5001, so `rest_command.tvoverlay_notify` and `script.tv_popup` stay as they are. Like TvOverlay, this mode has **no token**. Only one app can use port 5001, so disable TvOverlay on that TV: `adb -s 192.168.1.60:5555 shell pm disable-user --user 0 com.tabdeveloper.tvoverlay`.
+- **With a token:** `POST http://192.168.1.60:2424/api/v1/notify` with an `Authorization: Bearer <token>` header and the same payload fields. Put the token in `secrets.yaml`, never in the package file.
+
+It is pre-alpha; see its [Home Assistant set-up](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/home-assistant.md).
 
 TvOverlay's API: `title`, `message`, `image` (URL, MDI icon or base64), `video` (RTSP/HLS), `smallIcon`, `smallIconColor`, `corner` (`top_start`, `top_end`, `bottom_start`, `bottom_end`), `duration` (seconds).
 

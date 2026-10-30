@@ -35,10 +35,11 @@ const CONFIG = {
   // darkens when open. Set garage: null if you don't have one.
   garage: { entity: 'binary_sensor.garage_door', at: [13.4, 46], door: [7.1, 51.6, 12.6, 7.4] },
 
-  // Appliances on energy-monitoring smart plugs. Measure only: the panel never switches them.
+  // Appliances on energy-monitoring smart plugs. Measure only: the panel never switches them. In the Energy
+  // view their hotspots show the selected hour's use.
   appliances: [
     { name: 'Fridge', power: 'sensor.fridge_plug_power', today: 'sensor.fridge_plug_energy_today', month: 'sensor.fridge_plug_energy_this_month',
-      at: [61, 53], runningAbove: 10 },
+      at: [61, 53], runningAbove: 10 },   // optional `energy:` statistic for the Energy view's hourly figures (default: `today`)
   ],
 
   // Warm room lights that come on as it gets dark: [left, top, size %].
@@ -68,18 +69,26 @@ const CONFIG = {
     otherwise: { name: 'Shoulder', rate: 0.34, color: '#6f9fd8' },
   },
 
-  // Energy: long-term statistic IDs (Developer tools → Statistics). `import` = grid consumption series
-  // (one or several tariff bands, never the total as well), `export` = solar sent to the grid, `cost` =
-  // optional cost series (if empty, cost is priced from the tariff above). `bill` = a sensor with the cost
-  // so far this bill (optional). Set energy: null to hide the Energy view. Example IDs show the shape a
-  // retailer integration might use; yours will differ.
+  // Energy view (optional). It appears only if your home has energy data: enabled 'auto' (the default) shows
+  // it when data is found; true / false force it on or off. With nothing listed below, the panel reads Home
+  // Assistant's own Energy dashboard settings (Settings → Dashboards → Energy): grid import and export, solar,
+  // battery, individual devices, and their live power sensors if you added any. To use other statistics (for
+  // example a retailer integration whose data arrives 1–2 days late), list them here: a filled list replaces
+  // what the Energy dashboard says. Statistic IDs are in Developer tools → Statistics.
   energy: {
-    source: 'Your retailer',
-    bill: 'sensor.electricity_cost_this_bill',
-    import: ['retailer:consumption_peak_ACCOUNT', 'retailer:consumption_offpeak_ACCOUNT'],
-    export: ['retailer:generation_ACCOUNT'],
-    cost: [],
-    note: 'From the smart meter via the retailer, hourly, usually 1–2 days behind.',
+    enabled: 'auto',
+    source: '',                    // shown next to the figures, e.g. 'Smart meter'
+    import: [],                    // grid consumption, e.g. ['retailer:consumption_peak_ACCOUNT', 'retailer:consumption_offpeak_ACCOUNT']
+    export: [],                    // energy sent to the grid
+    solar: [],                     // solar production, if you measure it
+    cost: [],                      // cost series for `import`; empty = priced from the tariff above
+    bill: null,                    // optional sensor with the cost so far this bill
+    // Live power sensors (W or kW): grid positive = importing, battery positive = discharging. Empty lists =
+    // the Energy dashboard's power sensors, if any. The Now button only appears when a live sensor exists
+    // (a switchboard monitor such as Shelly, IoTaWatt or Emporia, or the appliance plugs above).
+    live: { grid: [], solar: [], battery: [] },
+    note: '',
+    tvCycleSeconds: 0,             // TV mode: > 0 alternates House and Energy every N seconds; 0 = only via the Energy button
   },
 
   // Emergency feed banner: geo_location entities whose `source` attribute is in this list.
@@ -91,7 +100,7 @@ const CONFIG = {
   sunPath: { rise: 5.6, set: 18.4, maxElevation: 62 },
   // Energy-flow diagram nodes on the render: [left, top] in %.
   flows: { grid: [6.9, 92.7], home: [40.7, 57.3], solar: [88, 19.5] },
-  tvModeSeconds: 45,               // TV mode alternates House and Energy every N seconds
+  tvHideSidebar: true,             // TV mode hides HA's own sidebar too (remembered in that browser only)
 };
 // ===== END OF CONFIG =======================================================================================
 
@@ -108,6 +117,12 @@ const money = v => `${CONFIG.currency}${v.toFixed(2)}`;
 const at = p => `left:${p[0]}%;top:${p[1]}%`;
 const RW = CONFIG.render.width, RH = CONFIG.render.height;
 const px = p => [p[0] / 100 * RW, p[1] / 100 * RH];
+const sum = a => a.reduce((p, c) => p + c, 0);
+const DAY = 86400000;
+const dayStart = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return +d; };
+const addDays = (t, n) => { const d = new Date(t); d.setDate(d.getDate() + n); return dayStart(d); };
+const hh = h => `${String(h).padStart(2, '0')}:00`;
+const kw = w => (Math.abs(w) >= 1000 ? `${(w / 1000).toFixed(1)} kW` : `${Math.round(w)} W`);
 
 const CSS = `
 :host { display: block; height: 100%; --ground:#1a1f24; --glass:rgba(20,26,31,.82); --line:rgba(255,255,255,.09); --text:#eef2f0; --muted:#93a39d;
@@ -127,13 +142,14 @@ const CSS = `
   background: radial-gradient(closest-side, var(--c, var(--warm)) 0%, transparent 100%); filter: blur(6px); }
 .hot { pointer-events: auto; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: rgba(14,18,22,.72);
   border: 1px solid rgba(255,255,255,.25); color: var(--text); cursor: pointer; transition: transform .2s; padding: 0; }
-.hot:hover, .hot:focus-visible { transform: translate(-50%,-50%) scale(1.12); outline: none; box-shadow: 0 0 0 2px var(--warm); }
+.hot:hover, .hot:focus-visible { transform: translate(-50%,-50%) scale(1.12); outline: none; box-shadow: 0 0 0 3px var(--warm); }
 .hot svg { width: 18px; height: 18px; fill: currentColor; }
 .hot.active { color: var(--tv); border-color: var(--tv); }
 .hot.warn { color: var(--alert); border-color: var(--alert); }
 .lbl { position: absolute; left: 50%; top: 115%; transform: translateX(-50%); white-space: nowrap; font: 500 11px var(--data); background: rgba(14,18,22,.85);
   padding: 2px 7px; border-radius: 6px; color: var(--muted); opacity: 0; transition: opacity .2s; }
-.hot:hover .lbl, .hot:focus-visible .lbl { opacity: 1; }
+.hot:hover .lbl, .hot:focus-visible .lbl, .hot.showlbl .lbl { opacity: 1; }
+.hot.showlbl .lbl { color: var(--text); }
 .cam::before, .cam::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid var(--alert); opacity: 0; }
 .cam.motion::before { animation: ring 1.6s ease-out infinite; } .cam.motion::after { animation: ring 1.6s ease-out .8s infinite; }
 @keyframes ring { from { transform: scale(1); opacity: .9; } to { transform: scale(2.6); opacity: 0; } }
@@ -170,13 +186,17 @@ const CSS = `
 .binrow img { width: 30px; transition: filter .3s, opacity .3s; } .binrow img.dim { filter: grayscale(1); opacity: .3; }
 .col { display: grid; gap: 16px; min-width: 0; }
 .tabs { display: flex; gap: 4px; background: rgba(255,255,255,.05); padding: 4px; border-radius: 10px; }
-.tabs[hidden] { display: none; }
 .tabs button { flex: 1; border: 0; background: transparent; color: var(--muted); font: 600 13px inherit; padding: 7px; border-radius: 7px; cursor: pointer; }
 .tabs button[aria-pressed="true"] { background: rgba(255,255,255,.12); color: var(--text); }
+/* Energy appears only when the panel found energy data (or it is forced on). */
+.needs-energy { display: none !important; }
+:host([energy-on]) .tabs.needs-energy { display: flex !important; }
+:host([energy-on]) .sec.needs-energy { display: grid !important; }
 .flows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity .6s; }
 .flows.show { opacity: 1; }
 .flows .wire { fill: none; stroke: rgba(255,255,255,.12); stroke-linecap: round; }
 .flows .run { fill: none; stroke-linecap: round; stroke-dasharray: 2 22; animation: run var(--dur, 1.5s) linear infinite; transition: stroke-width .5s, opacity .5s; }
+.flows .run.rev { animation-direction: reverse; }
 @keyframes run { to { stroke-dashoffset: -96; } }
 .flows .node { fill: rgba(14,18,22,.82); stroke-width: 3; }
 .flows text { font: 600 22px "Manrope", system-ui, sans-serif; fill: var(--text); }
@@ -185,12 +205,22 @@ const CSS = `
 .ecard[hidden] { display: none; }
 .etop { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
 .etop h3 { margin: 0; font-size: 17px; }
-.play { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--text); border-radius: 8px; padding: 6px 12px; font: 600 13px inherit; cursor: pointer; }
-.ecard input[type=range] { width: 100%; accent-color: var(--warm); }
+.ectl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ectl .edate { min-width: 9em; text-align: center; font: 600 14px var(--data); }
+.ebtn { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--text); border-radius: 8px; padding: 8px 14px; font: 600 14px inherit; cursor: pointer; }
+.ebtn[disabled] { opacity: .35; cursor: default; }
+.ebtn.on { background: #173a4a; color: var(--tv); border-color: var(--tv); }
+.hourrow { display: flex; gap: 12px; align-items: center; }
+.hourrow input { flex: 1; accent-color: var(--warm); }
+.hourrow output { font: 600 14px var(--data); min-width: 3.2em; text-align: right; }
+.ecard .empty { color: var(--muted); font-size: 14px; padding: 18px 0; text-align: center; }
 .chart svg { width: 100%; height: auto; display: block; }
 .chart text { font: 500 11px var(--data); fill: var(--muted); }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); }
 .legend b { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.devs { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 16px; font-size: 13px; }
+.devs:empty { display: none; }
+.devs .row span:last-child { font-family: var(--data); color: var(--muted); }
 .heat svg { width: 100%; height: auto; display: block; }
 .heat text { font: 500 10px var(--data); fill: var(--muted); }
 .heat rect.c:hover { stroke: #fff; stroke-width: 1.5; }
@@ -207,14 +237,27 @@ const CSS = `
 @keyframes spin { to { transform: rotate(360deg); } }
 .menu[hidden] { display: none; }
 .camcard .row button { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--text); border-radius: 8px; padding: 6px 10px; cursor: pointer; font: 600 12px inherit; }
-/* TV mode: full-bleed stage, no side panel, ticker strip along the bottom */
+.viewbtn { position: absolute; right: 2%; bottom: 4%; z-index: 4; display: none; }
+/* Large, visible focus for TV remotes (D-pad). */
+button:focus-visible, input:focus-visible { outline: 4px solid var(--warm); outline-offset: 3px; }
+:host([tv]) button:focus, :host([tv]) input:focus { outline: 4px solid var(--warm); outline-offset: 3px; }
+:host([tv]) .hot:focus { outline: none; box-shadow: 0 0 0 4px var(--warm); }
+/* TV mode: full screen, no side panel, ticker along the bottom. In the Energy view the house shrinks into the
+   top ~60% and the energy card docks underneath, so nothing covers the house. */
 :host([tv]) .wrap { padding: 0; overflow: hidden; }
 :host([tv]) .app { grid-template-columns: 1fr; max-width: none; height: 100%; }
 :host([tv]) .panel, :host([tv]) .menu { display: none; }
-:host([tv]) .col { height: 100%; align-content: center; }
-:host([tv]) .stage { border-radius: 0; max-height: 100vh; }
-:host([tv]) .ecard { position: absolute; left: 2%; right: 2%; bottom: 2%; background: rgba(14,18,22,.8); }
-:host([tv]) .ecard .heat, :host([tv]) .ecard #chart14, :host([tv]) .ecard input, :host([tv]) .ecard .play { display: none; }
+:host([tv]) .col { height: 100vh; display: flex; flex-direction: column; justify-content: center; gap: 0; }
+:host([tv]) .stage { border-radius: 0; flex: none; width: min(100%, calc(100vh * ${RW} / ${RH})); margin: 0 auto; }
+:host([tv][energy-on]) .viewbtn { display: block; }
+:host([tv][view="energy"]) .viewbtn, :host([tv][view="energy"]) .ticker { display: none; }
+:host([tv][view="energy"]) .stage { width: min(100%, calc(60vh * ${RW} / ${RH})); border-radius: 0 0 14px 14px; }
+:host([tv][view="energy"]) .col { justify-content: flex-start; }
+:host([tv]) .ecard { flex: 1; min-height: 0; overflow: hidden; margin: 1vh 2% 1.5vh; padding: 1.2vh 1.4vw; gap: 1vh; background: rgba(14,18,22,.85);
+  align-content: start; font-size: clamp(13px, 1.1vw, 20px); }
+:host([tv]) .ecard .heat, :host([tv]) .ecard #chart14 { display: none; }
+:host([tv]) .ecard .chart svg { max-height: 19vh; }
+:host([tv]) .ebtn { font-size: clamp(14px, 1.1vw, 20px); padding: .6vh 1vw; }
 .ticker { display: none; }
 :host([tv]) .ticker { display: flex; position: absolute; left: 0; right: 0; bottom: 0; gap: 28px; justify-content: center; align-items: center;
   padding: 12px 20px; background: linear-gradient(transparent, rgba(10,13,16,.85)); font: 500 clamp(13px, 1.3vw, 20px) var(--data); color: var(--text); }
@@ -233,7 +276,7 @@ const hot = (id, p, icon, label, cls = '') =>
   `<button class="ov hot ${cls}" id="${id}" style="${at(p)}" aria-label="${esc(label)}"><svg viewBox="0 0 24 24">${ICON[icon]}</svg><span class="lbl" id="${id}L">${esc(label)}</span></button>`;
 
 function buildHtml() {
-  const C = CONFIG, B = C.base, en = !!(C.energy && C.energy.import && C.energy.import.length);
+  const C = CONFIG, B = C.base, E = C.energy || {};
   const [g, h, s] = [px(C.flows.grid), px(C.flows.home), px(C.flows.solar)];
   const curve = (a, b) => `M${a[0]} ${a[1]} C ${a[0] + (b[0] - a[0]) * .4} ${a[1]}, ${b[0] - (b[0] - a[0]) * .3} ${b[1] + (a[1] - b[1]) * .4}, ${b[0]} ${b[1]}`;
   const peakBand = C.tariff.bands.find(b => b.peak);
@@ -258,13 +301,13 @@ function buildHtml() {
     <div class="clock"><div class="t" id="time">--:--</div><div class="d" id="date"></div><div class="tariff" id="tariff"><b></b><span></span></div></div>
     <svg class="flows" id="flows" viewBox="0 0 ${RW} ${RH}" aria-hidden="true">
       <path class="wire" d="${curve(g, h)}"/><path class="wire" d="${curve(h, s)}"/>
-      <path class="run" id="fImp" d="${curve(g, h)}" stroke="#b49cf0"/>
-      <path class="run" id="fExp" d="${curve(h, s)}" stroke="#f2b84b"/>
+      <path class="run" id="fGrid" d="${curve(g, h)}" stroke="#b49cf0"/>
+      <path class="run" id="fSun" d="${curve(h, s)}" stroke="#f2b84b"/>
       <g><circle class="node" cx="${g[0]}" cy="${g[1]}" r="40" stroke="#b49cf0"/><text x="${g[0]}" y="${g[1] + 7}" text-anchor="middle">Grid</text></g>
       <g><circle class="node" cx="${h[0]}" cy="${h[1]}" r="44" stroke="#7cc29a"/><text x="${h[0]}" y="${h[1] + 7}" text-anchor="middle">Home</text></g>
       <g id="sunNode"><circle class="node" cx="${s[0]}" cy="${s[1]}" r="44" stroke="#f2b84b"/><text x="${s[0]}" y="${s[1] + 7}" text-anchor="middle">Solar</text></g>
-      <text class="sub" id="tImp" x="${(g[0] + h[0]) / 2}" y="${(g[1] + h[1]) / 2 + 40}">—</text>
-      <text class="sub" id="tExp" x="${(h[0] + s[0]) / 2}" y="${(h[1] + s[1]) / 2 + 40}">—</text>
+      <text class="sub" id="tGrid" x="${(g[0] + h[0]) / 2}" y="${(g[1] + h[1]) / 2 + 40}"></text>
+      <text class="sub" id="tSun" x="${(h[0] + s[0]) / 2}" y="${(h[1] + s[1]) / 2 + 40}"></text>
     </svg>
     <div class="banner" id="banner" role="status"></div>
     <div class="vig" id="vig"></div>
@@ -277,32 +320,40 @@ function buildHtml() {
       <div class="row"><small>Snapshot refreshes every 10 seconds</small>
         <span style="display:flex;gap:6px"><button id="camLive">Live view</button><button id="camClose">Close</button></span></div>
     </div>
+    <button class="ebtn viewbtn" id="eOpen">⚡ Energy</button>
     <div class="ticker" id="ticker"></div>
   </section>
-  <section class="ecard" id="ecard" hidden>
+  <section class="ecard" id="ecard" hidden aria-label="Energy">
     <div class="etop">
-      <h3 id="eTitle">Energy · latest day</h3>
-      <div class="legend">${peakTxt ? `<span><b style="background:#e8734a"></b>Grid in · ${esc(peakTxt)}</span>` : ''}<span><b style="background:#b49cf0"></b>Grid in${peakTxt ? ' · other hours' : ''}</span><span><b style="background:#f2b84b"></b>Solar out</span></div>
-      <button class="play" id="play">▶ Replay day</button>
+      <h3 id="eTitle">Energy</h3>
+      <div class="legend">${peakTxt ? `<span><b style="background:#e8734a"></b>Grid in · ${esc(peakTxt)}</span>` : ''}<span><b style="background:#b49cf0"></b>Grid in${peakTxt ? ' · other hours' : ''}</span><span><b style="background:#f2b84b"></b>Solar out</span><span id="lgSolar" hidden><b style="background:#ffe08a"></b>Solar made</span></div>
     </div>
-    <input type="range" id="hour" min="0" max="23" step="1" value="12" aria-label="Hour of the day">
+    <div class="ectl">
+      <button class="ebtn" id="eBack">◀ House</button>
+      <button class="ebtn" id="ePrev">◀ Previous day</button><span class="edate" id="eDate">—</span><button class="ebtn" id="eNext">Next day ▶</button>
+      <button class="ebtn" id="play">▶ Play</button>
+      <button class="ebtn" id="eToday">Today</button>
+      <button class="ebtn" id="eNow" hidden>● Now</button>
+    </div>
+    <div class="hourrow"><input type="range" id="hour" min="0" max="23" step="1" value="12" aria-label="Hour of the day (left and right step one hour)"><output id="hourOut">12:00</output></div>
     <div class="chart" id="chart"></div>
+    <div class="devs" id="devs"></div>
     <div class="chart" id="chart14"></div>
     <div class="heat" id="heat"></div>
-    <p class="muted" style="margin:0">${en ? esc(C.energy.note || '') : ''}</p>
+    <p class="muted" style="margin:0" id="eNote">${esc(E.note || '')}</p>
   </section>
   </div>
   <aside class="panel">
-    <div class="tabs" role="group" aria-label="View" ${en ? '' : 'hidden'}><button id="vHouse" aria-pressed="true">House</button><button id="vEnergy" aria-pressed="false">Energy</button></div>
+    <div class="tabs needs-energy" role="group" aria-label="View"><button id="vHouse" aria-pressed="true">House</button><button id="vEnergy" aria-pressed="false">Energy</button></div>
     <h2>${esc(C.title)}</h2>
-    <div class="sec" ${en ? '' : 'hidden'}>
-      <div class="eyebrow"><span id="dayLbl">Energy · latest day</span><span>${en ? esc(C.energy.source || '') : ''}</span></div>
+    <div class="sec needs-energy">
+      <div class="eyebrow"><span id="dayLbl">Energy · latest day</span><span>${esc(E.source || '')}</span></div>
       <div class="kpis">
         <div class="kpi"><div class="v" id="kCost">—</div><div class="k">Cost</div></div>
         <div class="kpi"><div class="v" id="kUsed">—</div><div class="k">Used</div></div>
         <div class="kpi"><div class="v" id="kSolar" style="color:var(--ok)">—</div><div class="k">Solar out</div></div>
       </div>
-      <div class="row"><small>This bill so far</small><span id="bill" style="font-family:var(--data)">—</span></div>
+      ${E.bill ? '<div class="row"><small>This bill so far</small><span id="bill" style="font-family:var(--data)">—</span></div>' : ''}
     </div>
     <div class="sec" ${C.bins ? '' : 'hidden'}>
       <div class="eyebrow"><span>Bins</span><span id="binWhen">—</span></div>
@@ -329,8 +380,47 @@ function buildHtml() {
 </div></div>`;
 }
 
+// Where the energy figures come from: CONFIG.energy lists win; otherwise HA's Energy dashboard settings.
+// Handles both shapes of grid source (flat stat_energy_from/to, and the older flow_from/flow_to lists).
+function energySources(prefs) {
+  const E = CONFIG.energy || {}, P = { imp: [], exp: [], solar: [], batIn: [], batOut: [], cost: [], devices: [], live: { grid: [], solar: [], battery: [] } };
+  const rate = (list, s) => {
+    if (s.stat_rate) list.push({ id: s.stat_rate, sign: 1 });
+    const pc = s.power_config || {};
+    if (pc.stat_rate) list.push({ id: pc.stat_rate, sign: 1 });
+    if (pc.stat_rate_inverted) list.push({ id: pc.stat_rate_inverted, sign: -1 });
+    if (pc.stat_rate_from) list.push({ id: pc.stat_rate_from, sign: 1 });
+    if (pc.stat_rate_to) list.push({ id: pc.stat_rate_to, sign: -1 });
+  };
+  for (const s of (prefs && prefs.energy_sources) || []) {
+    if (s.type === 'grid') {
+      const from = s.flow_from || (s.stat_energy_from ? [s] : []), to = s.flow_to || (s.stat_energy_to ? [s] : []);
+      for (const f of from) { P.imp.push(f.stat_energy_from); if (f.stat_cost) P.cost.push(f.stat_cost); }
+      for (const t of to) P.exp.push(t.stat_energy_to);
+      rate(P.live.grid, s);
+    } else if (s.type === 'solar') { P.solar.push(s.stat_energy_from); rate(P.live.solar, s); }
+    else if (s.type === 'battery') { P.batOut.push(s.stat_energy_from); P.batIn.push(s.stat_energy_to); rate(P.live.battery, s); }
+  }
+  for (const d of (prefs && prefs.device_consumption) || []) P.devices.push({ id: d.stat_consumption, name: d.name, power: d.stat_rate });
+  const own = l => (l || []).filter(Boolean);
+  const live = k => (E.live && own(E.live[k]).length ? own(E.live[k]).map(id => ({ id, sign: 1 })) : P.live[k]);
+  const imp = own(E.import).length ? own(E.import) : P.imp;
+  const devices = [...P.devices];
+  for (const a of CONFIG.appliances) {
+    const id = a.energy || a.today;
+    const d = devices.find(x => x.id === id);
+    if (d) Object.assign(d, { name: a.name, power: d.power || a.power }); else if (id) devices.push({ id, name: a.name, power: a.power });
+  }
+  return {
+    imp, exp: own(E.export).length ? own(E.export) : P.exp, solar: own(E.solar).length ? own(E.solar) : P.solar,
+    batIn: P.batIn, batOut: P.batOut,
+    cost: own(E.import).length ? own(E.cost) : (P.cost.length === P.imp.length ? P.cost : []),
+    devices, live: { grid: live('grid'), solar: live('solar'), battery: live('battery') },
+  };
+}
+
 class HouseTwin extends HTMLElement {
-  constructor() { super(); this.attachShadow({ mode: 'open' }); this._stats = null; this._statsAt = 0; }
+  constructor() { super(); this.attachShadow({ mode: 'open' }); this._stats = null; this._statsAt = 0; this._days = new Map(); }
   set narrow(v) { this._narrow = v; if (this.$) this.$('menu').hidden = !v; }
   set panel(v) {}
   set hass(h) {
@@ -357,23 +447,55 @@ class HouseTwin extends HTMLElement {
     $('camClose').addEventListener('click', () => this._closeCam());
     $('camLive').addEventListener('click', () => { const id = C.cameras[this._cam].camera; this._closeCam(); this._moreInfo(id); });
     $('tvBtn').addEventListener('click', () => this._enterTv(true));
-    this.addEventListener('keydown', e => { if (e.key === 'Escape') this._exitTv(); });
+    this.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' && e.key !== 'GoBack' && e.key !== 'BrowserBack') return;
+      if (this._mode === 'energy') { e.preventDefault(); e.stopPropagation(); this._setMode('house'); }
+      else if (e.key === 'Escape' && this._tvFs) this._exitTv();
+    });
     document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && this.hasAttribute('tv') && this._tvFs) this._exitTv(); });
     this._mode = 'house';
     const setMode = m => {
-      this._mode = m;
+      if (m === 'energy' && !this._energyOn) m = 'house';
+      const was = this._mode;
+      this._mode = m; this.setAttribute('view', m);
       $('vHouse').setAttribute('aria-pressed', m === 'house'); $('vEnergy').setAttribute('aria-pressed', m === 'energy');
       $('ecard').hidden = m !== 'energy'; $('flows').classList.toggle('show', m === 'energy');
-      if (m !== 'energy') this._stopPlay();
+      if (m !== 'energy') { this._stopPlay(); this._live = false; }
       this._render();
+      // Keep the remote's focus on something visible after the view changes.
+      if (was !== m && this.hasAttribute('tv')) (m === 'energy' ? $('play') : $('eOpen')).focus();
     };
+    this._setMode = setMode;
     $('vHouse').addEventListener('click', () => setMode('house'));
     $('vEnergy').addEventListener('click', () => setMode('energy'));
-    $('hour').addEventListener('input', () => { this._stopPlay(); this._render(); });
+    $('eOpen').addEventListener('click', () => setMode('energy'));
+    $('eBack').addEventListener('click', () => setMode('house'));
+    $('ePrev').addEventListener('click', () => this._goDay(-1));
+    $('eNext').addEventListener('click', () => this._goDay(1));
+    $('eToday').addEventListener('click', () => this._goToday());
+    $('eNow').addEventListener('click', () => { this._stopPlay(); this._live = !this._live; if (this._live) this._showDay(dayStart(Date.now())); this._render(); });
+    const hour = $('hour');
+    hour.addEventListener('input', () => { this._stopPlay(); this._live = false; this._render(); });
+    // Left/Right step one hour, and stay on the slider (a TV app's remote navigation would otherwise move on).
+    hour.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault(); e.stopPropagation();
+      this._stopPlay(); this._live = false;
+      hour.value = clamp(+hour.value + (e.key === 'ArrowRight' ? 1 : -1), 0, 23); this._render();
+    });
     $('play').addEventListener('click', () => this._playing ? this._stopPlay() : this._startPlay());
-    this._setMode = setMode;
     this._built = true;
-    if (/[?&]tv(=1|&|$)/.test(location.search)) this._enterTv(false);
+    if (/[?&]tv(=1|&|$)/.test(location.search)) {
+      if (C.tvHideSidebar) {
+        // Hide HA's own sidebar on this browser only (phones and PCs keep theirs). The panel can be built
+        // before it is attached, when the event would go nowhere, so wait until it is connected.
+        const hideSidebar = () => this.isConnected
+          ? this.dispatchEvent(new CustomEvent('hass-dock-sidebar', { detail: { dock: 'always_hidden' }, bubbles: true, composed: true }))
+          : setTimeout(hideSidebar, 250);
+        hideSidebar();
+      }
+      this._enterTv(false);
+    }
     this._tick = setInterval(() => this._render(), 20000);
   }
 
@@ -414,18 +536,20 @@ class HouseTwin extends HTMLElement {
     return s.state === 'on' ? Date.now() : Date.parse(s.last_changed);
   }
 
-  // ---- TV mode: full screen, no side panel, alternates House and an Energy replay ----
+  // ---- TV mode: full screen, no side panel. Energy opens with its button (or cycles, if configured). ----
   _enterTv(fullscreen) {
     this.setAttribute('tv', ''); this._tvFs = fullscreen;
     if (fullscreen && this.requestFullscreen) this.requestFullscreen().catch(() => {});
-    let n = 0;
     clearInterval(this._tvTimer);
-    this._tvTimer = setInterval(() => {
-      n++;
-      const energy = n % 2 === 1 && !!this._hourly;
-      this._setMode(energy ? 'energy' : 'house');
-      if (energy) { this.$('hour').value = 0; this._startPlay(); }
-    }, CONFIG.tvModeSeconds * 1000);
+    const cycle = +((CONFIG.energy || {}).tvCycleSeconds) || 0;
+    if (cycle > 0) {
+      this._tvTimer = setInterval(() => {
+        if (!this._energyOn) return;
+        const energy = this._mode !== 'energy';
+        this._setMode(energy ? 'energy' : 'house');
+        if (energy) { this.$('hour').value = 0; this._startPlay(); }
+      }, cycle * 1000);
+    }
     this._setMode('house');
   }
   _exitTv() {
@@ -435,14 +559,21 @@ class HouseTwin extends HTMLElement {
   }
   _moreInfo(entityId) { this.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId }, bubbles: true, composed: true })); }
   _st(id) { return this._hass && id && this._hass.states[id]; }
+  _num(id) { const s = this._st(id); return s && s.state !== '' && !isNaN(+s.state) ? +s.state : NaN; }
+  // A power sensor in watts (kW converted); NaN if missing or unavailable.
+  _watts(id) { const v = this._num(id); if (isNaN(v)) return NaN; const u = (this._st(id).attributes.unit_of_measurement || 'W').toLowerCase(); return u === 'kw' ? v * 1000 : u === 'mw' ? v * 1e6 : v; }
+  _liveSum(list) { const vals = list.map(x => this._watts(x.id) * x.sign).filter(v => !isNaN(v)); return vals.length ? sum(vals) : NaN; }
+  // Live power: a whole-home sensor (grid, solar or battery) or, once the view is on, appliance plugs too.
+  _hasMeterLive() { const L = this._src && this._src.live; return !!L && [...L.grid, ...L.solar, ...L.battery].some(x => !isNaN(this._watts(x.id))); }
+  _hasLive() { return this._hasMeterLive() || (!!this._src && this._src.devices.some(d => d.power && !isNaN(this._watts(d.power)))); }
 
   _render() {
     if (!this._hass || !this.$) return;
     const C = CONFIG, $ = this.$, now = new Date(), h = now.getHours() + now.getMinutes() / 60;
-    // Lighting: blend by real sun elevation (dusk band around the horizon); in Energy mode follow the replay hour.
-    const energy = this._mode === 'energy', eh = +$('hour').value + .5, sp = C.sunPath;
+    // Lighting: blend by real sun elevation (dusk band around the horizon); in Energy replay follow the replay hour.
+    const energy = this._mode === 'energy', replay = energy && !this._live, eh = +$('hour').value + .5, sp = C.sunPath;
     const sun = this._st('sun.sun');
-    const el = energy ? (eh > sp.rise && eh < sp.set ? sp.maxElevation * Math.sin(Math.PI * (eh - sp.rise) / (sp.set - sp.rise)) : -12)
+    const el = replay ? (eh > sp.rise && eh < sp.set ? sp.maxElevation * Math.sin(Math.PI * (eh - sp.rise) / (sp.set - sp.rise)) : -12)
       : sun ? +sun.attributes.elevation : (h > 7 && h < 17 ? 30 : -10);
     const night = clamp((2 - el) / 8, 0, 1);              // fully night below about -6°
     const dusk = el > 2 ? clamp((14 - el) / 12, 0, 1) * (1 - night) : (1 - night);
@@ -474,7 +605,7 @@ class HouseTwin extends HTMLElement {
     });
     if (C.cameras.length) $('motionTxt').textContent = moving.length ? 'Motion: ' + moving.join(', ') : 'Quiet';
 
-    const num = id => { const s = this._st(id); return s && s.state !== '' && !isNaN(+s.state) ? +s.state : NaN; };
+    const num = id => this._num(id);
     C.appliances.forEach((a, i) => {
       const w = num(a.power), day = num(a.today), mon = num(a.month);
       $(`ap${i}Now`).textContent = isNaN(w) ? 'Offline' : `${Math.round(w)} W`;
@@ -483,6 +614,7 @@ class HouseTwin extends HTMLElement {
       $(`ap${i}L`).textContent = isNaN(w) ? `${a.name} · offline` : `${a.name} · ${Math.round(w)} W`;
       $(`ap${i}`).classList.toggle('active', w > (a.runningAbove || 10));
       $(`ap${i}`).classList.toggle('warn', isNaN(w));
+      $(`ap${i}`).classList.toggle('showlbl', energy);
     });
 
     let days = NaN, binLbl = '';
@@ -517,10 +649,7 @@ class HouseTwin extends HTMLElement {
     const lbl = band.name + until;
     $('tariff').lastElementChild.textContent = lbl; $('tariff').firstElementChild.style.setProperty('--c', band.color || 'var(--muted)');
 
-    if (C.energy) {
-      const bill = num(C.energy.bill);
-      $('bill').textContent = isNaN(bill) ? '—' : money(bill);
-    }
+    if (C.energy && C.energy.bill) { const bill = num(C.energy.bill); $('bill').textContent = isNaN(bill) ? '—' : money(bill); }
     if (this._stats) {
       const s = this._stats;
       $('kCost').textContent = money(s.cost); $('kUsed').textContent = `${Math.round(s.used)} kWh`; $('kSolar').textContent = `${Math.round(s.solar)} kWh`;
@@ -541,34 +670,108 @@ class HouseTwin extends HTMLElement {
     }
   }
 
+  // ---- Energy view: one day at a time, hour by hour; or Now, from live power sensors ----
   _startPlay() {
-    const $ = this.$; this._playing = true; $('play').textContent = '❚❚ Pause';
+    const $ = this.$; this._playing = true; this._live = false; $('play').textContent = '❚❚ Pause';
     if (+$('hour').value >= 23) $('hour').value = 0;
     clearInterval(this._play);
     this._play = setInterval(() => {
       const v = +$('hour').value; if (v >= 23) { this._stopPlay(); return; }
       $('hour').value = v + 1; this._render();
     }, 900);
+    this._render();
   }
-  _stopPlay() { clearInterval(this._play); this._playing = false; if (this.$) this.$('play').textContent = '▶ Replay day'; }
+  _stopPlay() { clearInterval(this._play); this._playing = false; if (this.$) this.$('play').textContent = '▶ Play'; }
+
+  _goDay(n) {
+    this._stopPlay(); this._live = false;
+    const t = addDays(this._day || dayStart(Date.now()), n);
+    if (t > dayStart(Date.now()) || t < this._firstDay) return;
+    this._showDay(t);
+  }
+  // Today if it has data yet; otherwise the latest day that does (retailer data often lags a day or two).
+  _goToday() {
+    this._stopPlay(); this._live = false;
+    const today = dayStart(Date.now()), d = this._days.get(today);
+    const t = d && d.has ? today : (this._lastDay || today);
+    this.$('hour').value = t === today ? new Date().getHours() : 12;
+    this._showDay(t);
+  }
+  _showDay(t) { this._day = t; this._render(); if (!this._days.has(t) || (t === dayStart(Date.now()) && Date.now() - this._days.get(t).at > 5 * 60000)) this._loadDay(t); }
 
   _renderEnergy() {
-    const $ = this.$, d = this._hourly, hr = +$('hour').value;
-    if (!d) { $('eTitle').textContent = 'Energy · loading meter data…'; return; }
-    $('eTitle').textContent = `Energy · ${d.label} · ${String(hr).padStart(2, '0')}:00–${String(hr + 1).padStart(2, '0')}:00`;
-    const imp = d.imp[hr], exp = d.exp[hr];
-    const flow = (id, kwh, t) => {
-      const p = $(id); p.style.strokeWidth = kwh > .02 ? 4 + Math.min(kwh, 4) * 5 : 0; p.style.opacity = kwh > .02 ? 1 : 0;
-      p.style.setProperty('--dur', `${Math.max(.5, 2.4 - kwh * .45)}s`); $(t).textContent = kwh > .02 ? `${kwh.toFixed(1)} kWh` : '';
-    };
-    flow('fImp', imp, 'tImp'); flow('fExp', exp, 'tExp');
-    $('sunNode').style.opacity = hr >= 6 && hr <= 18 ? 1 : .35;
+    const $ = this.$, S = this._src, today = dayStart(Date.now());
+    if (!S) { $('eTitle').textContent = 'Energy · loading…'; return; }
+    const live = this._live && this._hasLive();
+    if (!live) this._live = false;
+    $('eNow').hidden = !this._hasLive(); $('eNow').classList.toggle('on', live);
+    if (live) { this._day = today; $('hour').value = new Date().getHours(); }
+    const t = this._day || this._lastDay || today, d = this._days.get(t), hr = +$('hour').value;
+    $('eDate').textContent = t === today ? 'Today' : new Date(t).toLocaleDateString(CONFIG.locale, { weekday: 'short', day: 'numeric', month: 'short' });
+    $('ePrev').disabled = addDays(t, -1) < this._firstDay; $('eNext').disabled = t >= today;
+    $('hourOut').textContent = hh(hr);
+    $('lgSolar').hidden = !S.solar.length;
 
-    // hourly chart: import above the axis (peak hours highlighted), export below
+    // Flows over the house: live watts in Now mode, that hour's kWh otherwise.
+    const flow = (id, txt, v, unitTxt, rev, color) => {
+      const p = $(id), k = live ? v / 1000 : v, act = k > .02;
+      p.style.strokeWidth = act ? 4 + Math.min(k, 4) * 5 : 0; p.style.opacity = act ? 1 : 0;
+      p.style.setProperty('--dur', `${Math.max(.5, 2.4 - k * .45)}s`); p.classList.toggle('rev', !!rev); p.setAttribute('stroke', color);
+      $(txt).textContent = act ? unitTxt : '';
+    };
+    let gridIn = 0, gridOut = 0, made = NaN;
+    if (live) {
+      const g = this._liveSum(S.live.grid), sol = this._liveSum(S.live.solar);
+      gridIn = g > 0 ? g : 0; gridOut = g < 0 ? -g : 0; made = sol;
+      $('eTitle').textContent = ['Energy · now', isNaN(g) ? '' : g >= 0 ? `${kw(g)} from the grid` : `${kw(-g)} to the grid`, isNaN(sol) ? '' : `solar ${kw(sol)}`].filter(Boolean).join(' · ');
+    } else if (d && d.has) {
+      gridIn = d.imp[hr]; gridOut = d.exp[hr]; made = S.solar.length ? d.solar[hr] : NaN;
+      $('eTitle').textContent = `Energy · ${hh(hr)}–${hh((hr + 1) % 24)}`;
+    } else $('eTitle').textContent = 'Energy';
+    const f = v => (live ? kw(v) : `${v.toFixed(1)} kWh`);
+    if (isNaN(made)) {           // no solar production figure: grid in on one wire, solar exported on the other
+      flow('fGrid', 'tGrid', gridIn, f(gridIn), false, '#b49cf0');
+      flow('fSun', 'tSun', gridOut, f(gridOut), false, '#f2b84b');
+    } else {                     // net grid on one wire (reversed when exporting), solar into the home on the other
+      const exp = gridOut > gridIn;
+      flow('fGrid', 'tGrid', exp ? gridOut : gridIn, f(exp ? gridOut : gridIn), exp, exp ? '#f2b84b' : '#b49cf0');
+      flow('fSun', 'tSun', made, f(made), true, '#ffe08a');
+    }
+    $('sunNode').style.opacity = live ? (made > 20 ? 1 : .35) : hr >= 6 && hr <= 18 ? 1 : .35;
+
+    // Device hotspots and list: that hour's use (or live watts).
+    const devRows = [];
+    S.devices.forEach(dev => {
+      const series = d && d.dev[dev.id], name = dev.name || (this._st(dev.id) && this._st(dev.id).attributes.friendly_name) || dev.id;
+      const ai = CONFIG.appliances.findIndex(a => (a.energy || a.today) === dev.id);
+      let lbl = name, val;
+      if (live) { const wv = dev.power ? this._watts(dev.power) : NaN; val = isNaN(wv) ? '—' : kw(wv); lbl = `${name} · ${val}`; }
+      else if (series) {
+        const kwh = series[hr], dayKwh = sum(series), dayCost = sum(series.map((v, i) => v * RATE(i)));
+        lbl = `${name} · ${kwh.toFixed(2)} kWh at ${hh(hr)}`;
+        val = `${dayKwh.toFixed(2)} kWh · ${money(dayCost)}`;
+      }
+      if (ai >= 0 && val !== undefined) $(`ap${ai}L`).textContent = lbl;
+      if (val !== undefined) devRows.push(`<div class="row"><span>${esc(name)}</span><span>${esc(val)}</span></div>`);
+    });
+    $('devs').innerHTML = devRows.join('');
+
+    if (!d || !d.has) {
+      $('chart').innerHTML = `<div class="empty">${!S.imp.length ? 'No meter history found. Add your grid meter in Settings → Dashboards → Energy, or list its statistics in the panel CONFIG.'
+        : !d ? 'Loading…' : t >= addDays(today, -2)
+        ? 'No meter data for this day yet. Some sources (retailer integrations) arrive a day or two late.' : 'No energy data for this day.'}</div>`;
+    } else this._renderChart(d, hr, live);
+
+    if (this.hasAttribute('tv')) return;   // the 14-day strip and heatmap are for the full-size page
+    this._renderHistory();
+  }
+
+  // Hourly chart: grid import above the axis (peak hours highlighted), export below, solar production as a line.
+  _renderChart(d, hr, live) {
     const W = 720, H = 200, mid = 120, pad = 28, bw = (W - pad) / 24;
-    const max = Math.max(1, ...d.imp), maxE = Math.max(1, ...d.exp);
+    const max = Math.max(1, ...d.imp, ...(this._src.solar.length ? d.solar : [])), maxE = Math.max(1, ...d.exp);
     const sUp = (mid - 14) / max, sDn = (H - mid - 18) / maxE;
-    let bars = '', shade = '';
+    let bars = '', shade = '', line = '';
     for (let i = 0; i < 24; i++) {
       const x = pad + i * bw + 2, w = bw - 4, op = i === hr ? 1 : .55;
       if (IS_PEAK(i)) shade += `<rect x="${pad + i * bw}" y="4" width="${bw}" height="${mid - 4}" fill="rgba(232,115,74,.08)"/>`;
@@ -576,15 +779,20 @@ class HouseTwin extends HTMLElement {
       bars += `<rect x="${x}" y="${mid}" width="${w}" height="${d.exp[i] * sDn}" rx="2" fill="#f2b84b" opacity="${op}"/>`;
       if (i % 3 === 0) bars += `<text x="${x + w / 2}" y="${H - 2}" text-anchor="middle">${i}</text>`;
     }
+    if (this._src.solar.length) line = `<polyline fill="none" stroke="#ffe08a" stroke-width="2.5" points="${d.solar.map((v, i) => `${pad + i * bw + bw / 2},${mid - v * sUp}`).join(' ')}"/>`;
     const hx = pad + hr * bw;
-    $('chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Hourly grid import and solar export">
-      ${shade}<rect x="${hx}" y="4" width="${bw}" height="${H - 20}" fill="rgba(255,255,255,.06)"/>
+    const tot = sum(d.imp), totE = sum(d.exp);
+    this.$('chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Hourly grid import and export">
+      ${shade}<rect x="${hx}" y="4" width="${bw}" height="${H - 20}" fill="rgba(255,255,255,${live ? .12 : .06})"/>
       <line x1="${pad}" x2="${W}" y1="${mid}" y2="${mid}" stroke="rgba(255,255,255,.2)"/>
       <text x="0" y="14">${max.toFixed(1)}</text><text x="0" y="${mid - 4}">in</text><text x="0" y="${mid + 14}">out</text>
-      ${bars}</svg>`;
+      ${bars}${line}</svg>
+      <div class="row"><small>Day total</small><span style="font-family:var(--data)">${tot.toFixed(1)} kWh in · ${totE.toFixed(1)} kWh out${this._src.solar.length ? ` · ${sum(d.solar).toFixed(1)} kWh solar` : ''} · ${money(d.cost)}</span></div>`;
+  }
 
-    // 14-day strip: daily grid in vs solar out
-    const days = this._daily || [], dmax = Math.max(1, ...days.map(x => Math.max(x.used, x.solar)));
+  // 14-day strip and cost heatmap (full-size page only).
+  _renderHistory() {
+    const $ = this.$, W = 720, days = this._daily || [], dmax = Math.max(1, ...days.map(x => Math.max(x.used, x.solar)));
     const cw = W / Math.max(days.length, 1);
     let strip = '';
     days.forEach((x, i) => {
@@ -593,69 +801,103 @@ class HouseTwin extends HTMLElement {
       strip += `<rect x="${bx + w2 + 2}" y="${70 - x.solar / dmax * 60}" width="${w2}" height="${x.solar / dmax * 60}" rx="2" fill="#f2b84b"/>`;
       strip += `<text x="${bx + w2}" y="86" text-anchor="middle">${x.label}</text>`;
     });
-    const tot = d.imp.reduce((a, b) => a + b, 0), totE = d.exp.reduce((a, b) => a + b, 0);
-    $('chart14').innerHTML = `<div class="row" style="margin-bottom:6px"><small>Day total</small><span style="font-family:var(--data)">${tot.toFixed(1)} kWh in · ${totE.toFixed(1)} kWh out · ${money(d.cost)}</span></div>
-      <svg viewBox="0 0 ${W} 92" role="img" aria-label="Daily grid import and solar export, last two weeks">${strip}</svg>`;
+    $('chart14').innerHTML = days.length ? `<div class="row" style="margin-bottom:6px"><small>Last ${days.length} days · grid in and solar out</small></div>
+      <svg viewBox="0 0 ${W} 92" role="img" aria-label="Daily grid import and solar export">${strip}</svg>` : '';
 
     // cost heatmap: rows = days, columns = hours; colour = money spent that hour at your configured rates
     const hm = this._heat;
-    if (hm && hm.length) {
-      const L = 62, R = 50, top = 16, ch = 18, cwH = (W - L - R) / 24, hmax = Math.max(.01, ...hm.flatMap(r => r.cells));
-      const col = v => { const k = Math.min(v / hmax, 1); // charcoal → amber → red
-        const a = [38, 46, 54], b = [242, 184, 75], c = [232, 67, 42];
-        const m = k < .5 ? a.map((x, i) => x + (b[i] - x) * k * 2) : b.map((x, i) => x + (c[i] - x) * (k - .5) * 2);
-        return `rgb(${m.map(Math.round).join(',')})`; };
-      let cells = '';
-      for (let i = 0; i < 24; i++) if (IS_PEAK(i)) cells += `<rect x="${L + i * cwH}" y="${top - 2}" width="${cwH}" height="${hm.length * ch + 2}" fill="rgba(232,115,74,.08)"/>`;
-      for (let i = 0; i < 24; i += 3) cells += `<text x="${L + i * cwH + cwH / 2}" y="${top - 5}" text-anchor="middle">${i}</text>`;
-      hm.forEach((r, ri) => {
-        const y = top + ri * ch;
-        cells += `<text x="0" y="${y + 12}">${r.label}</text><text x="${W - R + 6}" y="${y + 12}">${money(r.total)}</text>`;
-        r.cells.forEach((v, hh) => { cells += `<rect class="c" x="${L + hh * cwH + 1}" y="${y + 1}" width="${cwH - 2}" height="${ch - 2}" rx="2" fill="${col(v)}"><title>${r.label} ${hh}:00 · ${money(v)}</title></rect>`; });
-      });
-      $('heat').innerHTML = `<div class="row" style="margin:6px 0"><small>What each hour cost · last ${hm.length} days (shaded = peak)</small><small>priced at your configured rates</small></div>
-        <svg viewBox="0 0 ${W} ${top + hm.length * ch + 4}" role="img" aria-label="Hourly cost heatmap">${cells}</svg>`;
-    }
+    if (!hm || !hm.length) { $('heat').innerHTML = ''; return; }
+    const L = 62, R = 50, top = 16, ch = 18, cwH = (W - L - R) / 24, hmax = Math.max(.01, ...hm.flatMap(r => r.cells));
+    const col = v => { const k = Math.min(v / hmax, 1); // charcoal → amber → red
+      const a = [38, 46, 54], b = [242, 184, 75], c = [232, 67, 42];
+      const m = k < .5 ? a.map((x, i) => x + (b[i] - x) * k * 2) : b.map((x, i) => x + (c[i] - x) * (k - .5) * 2);
+      return `rgb(${m.map(Math.round).join(',')})`; };
+    let cells = '';
+    for (let i = 0; i < 24; i++) if (IS_PEAK(i)) cells += `<rect x="${L + i * cwH}" y="${top - 2}" width="${cwH}" height="${hm.length * ch + 2}" fill="rgba(232,115,74,.08)"/>`;
+    for (let i = 0; i < 24; i += 3) cells += `<text x="${L + i * cwH + cwH / 2}" y="${top - 5}" text-anchor="middle">${i}</text>`;
+    hm.forEach((r, ri) => {
+      const y = top + ri * ch;
+      cells += `<text x="0" y="${y + 12}">${r.label}</text><text x="${W - R + 6}" y="${y + 12}">${money(r.total)}</text>`;
+      r.cells.forEach((v, h2) => { cells += `<rect class="c" x="${L + h2 * cwH + 1}" y="${y + 1}" width="${cwH - 2}" height="${ch - 2}" rx="2" fill="${col(v)}"><title>${r.label} ${h2}:00 · ${money(v)}</title></rect>`; });
+    });
+    $('heat').innerHTML = `<div class="row" style="margin:6px 0"><small>What each hour cost · last ${hm.length} days (shaded = peak)</small><small>priced at your configured rates</small></div>
+      <svg viewBox="0 0 ${W} ${top + hm.length * ch + 4}" role="img" aria-label="Hourly cost heatmap">${cells}</svg>`;
+  }
+
+  _ws(start, end, period, statistic_ids) {
+    return this._hass.callWS({ type: 'recorder/statistics_during_period', start_time: new Date(start).toISOString(),
+      ...(end ? { end_time: new Date(end).toISOString() } : {}), statistic_ids, period, types: ['change'], units: { energy: 'kWh' } });
+  }
+
+  // One day, hour by hour, for every series the view uses.
+  async _loadDay(t) {
+    const S = this._src; if (!S) return;
+    const ids = [...new Set([...S.imp, ...S.exp, ...S.solar, ...S.batIn, ...S.batOut, ...S.cost, ...S.devices.map(x => x.id)])];
+    if (!ids.length) return;
+    try {
+      const r = await this._ws(t, addDays(t, 1), 'hour', ids);
+      const byHour = list => { const a = Array(24).fill(0); for (const id of list) for (const x of r[id] || []) { const dt = new Date(x.start); if (dayStart(dt) === t) a[dt.getHours()] += x.change || 0; } return a; };
+      const imp = byHour(S.imp);
+      const d = { at: Date.now(), imp, exp: byHour(S.exp), solar: byHour(S.solar), dev: {},
+        has: S.imp.some(id => (r[id] || []).length) };
+      d.cost = S.cost.length ? sum(byHour(S.cost)) : sum(imp.map((v, i) => v * RATE(i)));
+      for (const dev of S.devices) if ((r[dev.id] || []).length) d.dev[dev.id] = byHour([dev.id]);
+      this._days.set(t, d);
+      this._render();
+    } catch (e) { console.warn('house-twin: hourly statistics unavailable', e); }
   }
 
   async _loadStats() {
     this._statsAt = Date.now();
     const E = CONFIG.energy;
-    if (!E || !E.import || !E.import.length) return;
-    const exp = E.export || [], cst = E.cost || [], ids = [...E.import, ...exp, ...cst];
-    const ws = (start, end, period, statistic_ids = ids) => this._hass.callWS({ type: 'recorder/statistics_during_period',
-      start_time: start.toISOString(), ...(end ? { end_time: end.toISOString() } : {}), statistic_ids, period, types: ['change'] });
-    const byHour = (r, list) => { const a = Array(24).fill(0); for (const id of list) for (const x of r[id] || []) a[new Date(x.start).getHours()] += x.change || 0; return a; };
-    const sum = a => a.reduce((p, c) => p + c, 0);
+    if (!E || E.enabled === false) return this._setEnergyOn(false);
     try {
-      const start = new Date(); start.setDate(start.getDate() - 16); start.setHours(0, 0, 0, 0);
-      const r = await ws(start, null, 'day');
-      const ch = (list, t) => list.reduce((acc, id) => acc + (((r[id] || []).find(x => x.start === t) || {}).change || 0), 0);
-      const allDays = [...new Set(E.import.flatMap(id => (r[id] || []).map(x => x.start)))].sort((a, b) => a - b);
+      let prefs = null;
+      try { prefs = await this._hass.callWS({ type: 'energy/get_prefs' }); } catch (e) { /* no Energy dashboard configured */ }
+      this._src = energySources(prefs);
+      const S = this._src;
+      this._firstDay = addDays(Date.now(), -60);
+      let allDays = [];
+      if (S.imp.length) {
+        const start = addDays(Date.now(), -60);
+        const r = await this._ws(start, null, 'day', [...S.imp, ...S.exp, ...S.solar]);
+        const ch = (list, t) => list.reduce((acc, id) => acc + (((r[id] || []).find(x => +new Date(x.start) === t) || {}).change || 0), 0);
+        allDays = [...new Set(S.imp.flatMap(id => (r[id] || []).map(x => dayStart(x.start))))].sort((a, b) => a - b)
+          .filter(t => ch(S.imp, t) > 0 || ch(S.exp, t) > 0);
+        if (allDays.length) this._firstDay = allDays[0];
+        this._daily = allDays.slice(-14).map(t => ({ used: ch(S.imp, t), solar: ch(S.exp, t),
+          label: new Date(t).toLocaleDateString(CONFIG.locale, { day: 'numeric', month: 'numeric' }) }));
+      }
+      this._lastDay = allDays[allDays.length - 1];
+      // Appliance plugs alone don't switch the view on: they already show on the house and in the side panel.
+      this._setEnergyOn(E.enabled === true || allDays.length > 0 || this._hasMeterLive());
       if (!allDays.length) return;
-      this._daily = allDays.slice(-14).map(t => ({ used: ch(E.import, t), solar: ch(exp, t),
-        label: new Date(t).toLocaleDateString(CONFIG.locale, { day: 'numeric', month: 'numeric' }) }));
 
-      // latest day with data, hour by hour (retailer data usually lags 1–2 days)
-      const dayStart = new Date(allDays[allDays.length - 1]), dayEnd = new Date(+dayStart + 86400000);
-      const rh = await ws(dayStart, dayEnd, 'hour');
-      const imp = byHour(rh, E.import), ex = byHour(rh, exp);
-      const cost = cst.length ? sum(byHour(rh, cst)) : sum(imp.map((v, hh) => v * RATE(hh)));
-      this._hourly = { imp, exp: ex, cost, label: dayStart.toLocaleDateString(CONFIG.locale, { weekday: 'long', day: 'numeric', month: 'short' }) };
-      this._stats = { used: sum(imp), solar: sum(ex), cost, label: dayStart.toLocaleDateString(CONFIG.locale, { weekday: 'short', day: 'numeric', month: 'short' }) };
+      // the latest day with data, hour by hour (retailer data often lags 1–2 days)
+      const last = this._lastDay;
+      await this._loadDay(last);
+      if (!this._day) this._day = last;
+      const ld = this._days.get(last);
+      if (ld) this._stats = { used: sum(ld.imp), solar: sum(ld.exp), cost: ld.cost, label: new Date(last).toLocaleDateString(CONFIG.locale, { weekday: 'short', day: 'numeric', month: 'short' }) };
 
       // heatmap: every hour of the last 14 data days, priced at the configured rate for that hour
-      const hs = allDays.slice(-14), hStart = new Date(hs[0]), hEnd = new Date(hs[hs.length - 1] + 86400000);
-      const rr = await ws(hStart, hEnd, 'hour', E.import);
-      const grid = new Map(hs.map(t => [new Date(t).toDateString(), Array(24).fill(0)]));
-      for (const id of E.import) for (const x of rr[id] || []) {
-        const dt = new Date(x.start), row = grid.get(dt.toDateString());
+      const hs = allDays.slice(-14);
+      const rr = await this._ws(hs[0], addDays(hs[hs.length - 1], 1), 'hour', S.imp);
+      const grid = new Map(hs.map(t => [t, Array(24).fill(0)]));
+      for (const id of S.imp) for (const x of rr[id] || []) {
+        const dt = new Date(x.start), row = grid.get(dayStart(dt));
         if (row) row[dt.getHours()] += (x.change || 0) * RATE(dt.getHours());
       }
-      this._heat = hs.map(t => { const cells = grid.get(new Date(t).toDateString());
+      this._heat = hs.map(t => { const cells = grid.get(t);
         return { label: new Date(t).toLocaleDateString(CONFIG.locale, { weekday: 'short', day: 'numeric' }), cells, total: sum(cells) }; });
       this._render();
-    } catch (e) { console.warn('house-twin: statistics unavailable', e); }
+    } catch (e) { console.warn('house-twin: statistics unavailable', e); this._setEnergyOn(E.enabled === true || this._hasMeterLive()); }
+  }
+  _setEnergyOn(v) {
+    this._energyOn = v;
+    this.toggleAttribute('energy-on', v);
+    if (!v && this._mode === 'energy') this._setMode('house');
+    this._render();
   }
 }
 customElements.define('house-twin-panel', HouseTwin);

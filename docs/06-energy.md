@@ -41,7 +41,8 @@ Re-check them whenever your retailer changes prices.
 
 ## Making sense of it
 
-- Retailer data lags: the House twin shows the **latest complete day** and labels it with the date.
+- Retailer data lags: the House twin's Energy view opens on the **latest day with data**; days not in yet say so. If your meter is already in HA's Energy dashboard, the panel finds it automatically; if you prefer a different series (say, a retailer's peak/off-peak split), list it under `energy.import` / `export` / `cost` in the panel CONFIG.
+- Live power sensors added to the Energy dashboard (grid, solar, battery or device power) light up the Energy view's **Now** button.
 - The House twin's **cost heatmap** (Energy view) prices every hour of the last 14 days at your rates. Bright cells in the peak band are where shifting usage (dishwasher, dryer, pool pump, hot water) saves the most.
 - Plugs answer "what does that one thing cost?": the House twin prices each appliance's monthly kWh at your 24-hour average rate.
 - To dig deeper, copy HA's database (`home-assistant_v2.db`, from a backup) and read it **read-only** with Python's `sqlite3`: `statistics_meta` gives the IDs, `statistics` holds hourly rows; the difference in the `sum` column per hour is the energy used. Compare against older bills: a sudden jump in one tariff band (for example after a hot-water system was replaced) shows up clearly.

@@ -205,6 +205,7 @@ const CSS = `
 .ecard[hidden] { display: none; }
 .etop { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
 .etop h3 { margin: 0; font-size: 17px; }
+.etot { display: none; font: 500 13px var(--data); color: var(--muted); }
 .ectl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ectl .edate { min-width: 9em; text-align: center; font: 600 14px var(--data); }
 .ebtn { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--text); border-radius: 8px; padding: 8px 14px; font: 600 14px inherit; cursor: pointer; }
@@ -237,7 +238,8 @@ const CSS = `
 @keyframes spin { to { transform: rotate(360deg); } }
 .menu[hidden] { display: none; }
 .camcard .row button { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--text); border-radius: 8px; padding: 6px 10px; cursor: pointer; font: 600 12px inherit; }
-.viewbtn { position: absolute; right: 2%; bottom: 4%; z-index: 4; display: none; }
+/* Sits above the ticker strip so nothing covers it (TV apps hit-test the button's centre). */
+.viewbtn { position: absolute; right: 2%; bottom: calc(2.6 * clamp(13px, 1.3vw, 20px) + 34px); z-index: 4; display: none; }
 /* Large, visible focus for TV remotes (D-pad). */
 button:focus-visible, input:focus-visible { outline: 4px solid var(--warm); outline-offset: 3px; }
 :host([tv]) button:focus, :host([tv]) input:focus { outline: 4px solid var(--warm); outline-offset: 3px; }
@@ -254,9 +256,15 @@ button:focus-visible, input:focus-visible { outline: 4px solid var(--warm); outl
 :host([tv][view="energy"]) .stage { width: min(100%, calc(60vh * ${RW} / ${RH})); border-radius: 0 0 14px 14px; }
 :host([tv][view="energy"]) .col { justify-content: flex-start; }
 :host([tv]) .ecard { flex: 1; min-height: 0; overflow: hidden; margin: 1vh 2% 1.5vh; padding: 1.2vh 1.4vw; gap: 1vh; background: rgba(14,18,22,.85);
-  align-content: start; font-size: clamp(13px, 1.1vw, 20px); }
-:host([tv]) .ecard .heat, :host([tv]) .ecard #chart14 { display: none; }
-:host([tv]) .ecard .chart svg { max-height: 19vh; }
+  font-size: clamp(13px, 1.1vw, 20px); }
+:host([tv]) .ecard:not([hidden]) { display: flex; flex-direction: column; }
+:host([tv]) .ecard > * { flex: none; }
+:host([tv]) .ecard .heat, :host([tv]) .ecard #chart14, :host([tv]) .ecard #eNote { display: none; }
+/* The chart takes whatever height is left, so the card always fits the screen. */
+:host([tv]) .ecard #chart { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: .5vh; }
+:host([tv]) .ecard #chart svg { flex: 1 1 0; min-height: 0; height: 100%; }
+:host([tv]) .ecard #chart .row { display: none; }
+:host([tv]) .etot { display: inline; margin-right: auto; }
 :host([tv]) .ebtn { font-size: clamp(14px, 1.1vw, 20px); padding: .6vh 1vw; }
 .ticker { display: none; }
 :host([tv]) .ticker { display: flex; position: absolute; left: 0; right: 0; bottom: 0; gap: 28px; justify-content: center; align-items: center;
@@ -323,9 +331,9 @@ function buildHtml() {
     <button class="ebtn viewbtn" id="eOpen">⚡ Energy</button>
     <div class="ticker" id="ticker"></div>
   </section>
-  <section class="ecard" id="ecard" hidden aria-label="Energy">
+  <section class="ecard" id="ecard" hidden aria-label="Energy" data-tvkiosk-keys="page">
     <div class="etop">
-      <h3 id="eTitle">Energy</h3>
+      <h3 id="eTitle">Energy</h3><span class="etot" id="eTot"></span>
       <div class="legend">${peakTxt ? `<span><b style="background:#e8734a"></b>Grid in · ${esc(peakTxt)}</span>` : ''}<span><b style="background:#b49cf0"></b>Grid in${peakTxt ? ' · other hours' : ''}</span><span><b style="background:#f2b84b"></b>Solar out</span><span id="lgSolar" hidden><b style="background:#ffe08a"></b>Solar made</span></div>
     </div>
     <div class="ectl">
@@ -484,6 +492,25 @@ class HouseTwin extends HTMLElement {
       hour.value = clamp(+hour.value + (e.key === 'ArrowRight' ? 1 : -1), 0, 23); this._render();
     });
     $('play').addEventListener('click', () => this._playing ? this._stopPlay() : this._startPlay());
+    // Inside the Energy card the page handles the remote's arrows itself (the card carries data-tvkiosk-keys="page"
+    // so TV Kiosk passes them through): Left/Right move along the button row, Down goes to the hour slider,
+    // Up from the slider comes back to the buttons.
+    $('ecard').addEventListener('keydown', e => {
+      const btns = [...this.shadowRoot.querySelectorAll('#ecard .ectl button')].filter(b => !b.hidden && !b.disabled);
+      const i = btns.indexOf(e.target);
+      let to = null;
+      if (i >= 0) {
+        if (e.key === 'ArrowRight') to = btns[Math.min(i + 1, btns.length - 1)];
+        else if (e.key === 'ArrowLeft') to = btns[Math.max(i - 1, 0)];
+        else if (e.key === 'ArrowDown') to = hour;
+        else if (e.key === 'ArrowUp') to = e.target;
+      } else if (e.target === hour && e.key === 'ArrowUp') to = btns.includes(this._lastBtn) ? this._lastBtn : $('play');
+      else if (e.target === hour && e.key === 'ArrowDown') to = hour;
+      if (!to) return;
+      e.preventDefault(); e.stopPropagation();
+      if (i >= 0) this._lastBtn = e.target;
+      to.focus();
+    });
     this._built = true;
     if (/[?&]tv(=1|&|$)/.test(location.search)) {
       if (C.tvHideSidebar) {
@@ -757,6 +784,7 @@ class HouseTwin extends HTMLElement {
     $('devs').innerHTML = devRows.join('');
 
     if (!d || !d.has) {
+      $('eTot').textContent = '';
       $('chart').innerHTML = `<div class="empty">${!S.imp.length ? 'No meter history found. Add your grid meter in Settings → Dashboards → Energy, or list its statistics in the panel CONFIG.'
         : !d ? 'Loading…' : t >= addDays(today, -2)
         ? 'No meter data for this day yet. Some sources (retailer integrations) arrive a day or two late.' : 'No energy data for this day.'}</div>`;
@@ -768,7 +796,13 @@ class HouseTwin extends HTMLElement {
 
   // Hourly chart: grid import above the axis (peak hours highlighted), export below, solar production as a line.
   _renderChart(d, hr, live) {
-    const W = 720, H = 200, mid = 120, pad = 28, bw = (W - pad) / 24;
+    // On a TV the chart is drawn at the card's own pixel size, so it fills the space left under the controls.
+    let W = 720, H = 200;
+    if (this.hasAttribute('tv')) {
+      const c = this.$('chart'), w = c.clientWidth, h = c.clientHeight - 4;
+      if (w > 200 && h > 50) { W = w; H = h; }
+    }
+    const mid = Math.round(H * .6), pad = 28, bw = (W - pad) / 24;
     const max = Math.max(1, ...d.imp, ...(this._src.solar.length ? d.solar : [])), maxE = Math.max(1, ...d.exp);
     const sUp = (mid - 14) / max, sDn = (H - mid - 18) / maxE;
     let bars = '', shade = '', line = '';
@@ -782,12 +816,14 @@ class HouseTwin extends HTMLElement {
     if (this._src.solar.length) line = `<polyline fill="none" stroke="#ffe08a" stroke-width="2.5" points="${d.solar.map((v, i) => `${pad + i * bw + bw / 2},${mid - v * sUp}`).join(' ')}"/>`;
     const hx = pad + hr * bw;
     const tot = sum(d.imp), totE = sum(d.exp);
+    const totTxt = `${tot.toFixed(1)} kWh in · ${totE.toFixed(1)} kWh out${this._src.solar.length ? ` · ${sum(d.solar).toFixed(1)} kWh solar` : ''} · ${money(d.cost)}`;
+    this.$('eTot').textContent = `Day: ${totTxt}`;
     this.$('chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Hourly grid import and export">
       ${shade}<rect x="${hx}" y="4" width="${bw}" height="${H - 20}" fill="rgba(255,255,255,${live ? .12 : .06})"/>
       <line x1="${pad}" x2="${W}" y1="${mid}" y2="${mid}" stroke="rgba(255,255,255,.2)"/>
       <text x="0" y="14">${max.toFixed(1)}</text><text x="0" y="${mid - 4}">in</text><text x="0" y="${mid + 14}">out</text>
       ${bars}${line}</svg>
-      <div class="row"><small>Day total</small><span style="font-family:var(--data)">${tot.toFixed(1)} kWh in · ${totE.toFixed(1)} kWh out${this._src.solar.length ? ` · ${sum(d.solar).toFixed(1)} kWh solar` : ''} · ${money(d.cost)}</span></div>`;
+      <div class="row"><small>Day total</small><span style="font-family:var(--data)">${totTxt}</span></div>`;
   }
 
   // 14-day strip and cost heatmap (full-size page only).

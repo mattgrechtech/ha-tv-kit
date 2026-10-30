@@ -55,6 +55,13 @@ function Write-Lines([string]$Path, [string[]]$Lines) {
   [IO.File]::WriteAllLines($Path, [string[]]$Lines)
 }
 
+# TV Kiosk (https://github.com/mattgrechtech/ha-tv-kiosk): release build, then the debug build developers install.
+$script:TvKioskPackages = @('io.github.mattgrechtech.tvkiosk', 'io.github.mattgrechtech.tvkiosk.debug')
+
+function Get-Packages([string]$Target, [string]$Flags = '') {
+  (Invoke-TvShell $Target "pm list packages $Flags") -split "`r?`n" | ForEach-Object { ($_ -replace '^package:', '').Trim() } | Where-Object { $_ }
+}
+
 function Add-UniqueLine([string]$Path, [string]$Line) {
   $existing = if (Test-Path $Path) { @(Get-Content $Path) } else { @() }
   if ($existing -notcontains $Line) { Write-Lines $Path (@($existing) + $Line) }

@@ -3,6 +3,11 @@
 # (Hisense, Sony, Philips, Xiaomi, ...), have different package names. Check every line against YOUR
 # TV's package list (tv/backups/<name>/packages-before.txt) and leave out anything you're unsure of.
 # Everything here is reversible with restore.ps1 / restore.sh.
+#
+# Reference result: on two TCL Google TVs (Android 14) every Tier 1 and Tier 2 line below was disabled,
+# plus two unused factory streaming apps (18 in all). After a restart, the inputs, Chromecast, AirPlay
+# and remote services were still running. Disabling ...tv.dreamx leaves the screensaver
+# blank until you set Aerial Views (docs/02, Step 7).
 
 # ---- Tier 1: vendor ads, promos, demos and tutorials (usually safe) ----
 com.tcl.waterfall.overseas             # vendor content/ad channel

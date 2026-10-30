@@ -36,39 +36,45 @@ Positions are percentages of the render; [`RENDERS.md`](../dashboard/house-twin/
 
 ## Showing it on the TV: a kiosk browser
 
-A kiosk browser opens one URL full screen, keeps the screen awake, reloads after a crash and starts at boot. Three options:
+A kiosk browser opens one URL full screen, keeps the screen awake, reloads after a crash and starts at boot. The kit's default is **TV Kiosk**, its companion app, because the same app also draws the pop-ups from [docs/03](03-tv-notifications.md). That makes it one app per TV instead of two. Fully Kiosk Browser and Kite AOS remain good alternatives.
 
-| | **Fully Kiosk Browser** | **Kite AOS** | **TV Kiosk** (companion app) |
+| | **TV Kiosk** (companion app, recommended) | **Fully Kiosk Browser** | **Kite AOS** |
 |---|---|---|---|
-| Licence | Proprietary; core features free, **PLUS** licence (paid, per device) for kiosk mode, motion detection, remote admin | Open source (Apache-2.0) | Open source (Apache-2.0) |
-| Android TV | Yes (Play Store or its own APK) | Has an Android TV build: check the project's releases for your device | Built for Android TV / Google TV; tested so far on one TCL Google TV (Android 14) |
-| Home Assistant | Official **Fully Kiosk Browser** integration: screen on/off, brightness, load URL, screensaver, sensors | Talks to HA over **MQTT**: needs the Mosquitto broker app and the MQTT integration | **REST** (token) and **MQTT** with HA discovery; also draws pop-ups (with an optional TvOverlay-compatible mode), so it can replace TvOverlay too |
-| Best for | Easiest setup, most features | Free and open source, no vendor licence | One app for dashboard, pop-ups and control. **Pre-alpha**, coming soon: check its status first |
+| Licence | Open source (Apache-2.0), free | Proprietary. Core features are free; a paid **PLUS** licence per device unlocks kiosk mode, motion detection and remote admin | Open source (Apache-2.0) |
+| Android TV | Built for Android TV / Google TV (Android 10+). Tested so far on one TCL Google TV (Android 14) | Yes, from the Play Store or its own APK | Has an Android TV build: check the project's releases for your device |
+| Home Assistant | **REST** (token) and **MQTT** with HA discovery. Also draws pop-ups over any app, with a TvOverlay-compatible mode | Official **Fully Kiosk Browser** integration: screen on/off, brightness, load URL, screensaver, sensors | Talks to HA over **MQTT**: needs the Mosquitto broker app and the MQTT integration |
+| Best for | One app for dashboard, pop-ups and control. **Pre-alpha**: check its status first | Most mature, most features | Free and open source, MQTT-based |
 
 There are other open-source kiosk apps with HA support (for example FreeKiosk); check their Android TV support before choosing. Install apps from the Play Store or the project's own GitHub releases only.
 
+### TV Kiosk
+
+Install it and give it the overlay permission as in [docs/02, Step 6](02-tv-prep.md#step-6-tv-kiosk-dashboard-and-pop-ups-in-one-app). What its [README](https://github.com/mattgrechtech/ha-tv-kiosk#readme) lists today:
+
+- **Setup with the remote:** first-run setup finds Home Assistant, signs in and lists your dashboards, so there's no URL to type. HA's header and sidebar are hidden. For this panel, choose the House twin, or set the start page to `http://192.168.1.50:8123/house?tv=1`.
+- **Remote:** the arrows jump between a page's buttons and OK presses them. An on-screen pointer is optional. Hold OK (or press Menu) for a quick menu. The House twin's Energy card passes the remote's arrows to the page (see TV mode above).
+- **Several pages:** it can rotate through dashboards and black the screen on a night schedule.
+- **Stays up:** it retries failed loads, replaces a crashed WebView and restarts itself after a crash. *Open the dashboard when the TV starts* is a setting (`boot_start`), off by default.
+- **Control:** REST with a token, and MQTT with HA discovery. See its [Home Assistant set-up](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/home-assistant.md) and [API](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/api.md).
+- **Screen:** it keeps the screen on over the dashboard by default (`keep_screen_on`). Turn that off if you want the TV's screensaver (for example Aerial Views) when idle.
+
+It doesn't replace the TV's launcher, and it can't wake a TV from deep standby by itself. Use the Android TV Remote integration's `media_player.turn_on` for that.
+
 ### Fully Kiosk Browser
 
-1. Install on the TV, open it, set the **Start URL** to `http://192.168.1.50:8123/house?tv=1` (your HA IP).
-2. Settings → Device management → **Launch on boot**; Settings → Web content → enable JavaScript and autoplay; turn on **Keep screen on** if you want it always visible (or leave it to the TV's screensaver).
-3. For the HA integration: Settings → Remote administration → enable, **set a strong password**, then in HA add the *Fully Kiosk Browser* integration with the TV's IP and that password. Remote admin listens on port 2323: keep it LAN-only, like everything else here.
+1. Install it on the TV, open it, and set the **Start URL** to `http://192.168.1.50:8123/house?tv=1` (your HA IP).
+2. In its settings:
+   - Device management → **Launch on boot**
+   - Web content → enable JavaScript and autoplay
+   - turn on **Keep screen on** if you want the dashboard always visible, or leave the screen to the TV's screensaver
+3. For the HA integration, go to Settings → Remote administration, enable it and **set a strong password**. Then add the *Fully Kiosk Browser* integration in HA with the TV's IP and that password. Remote admin listens on port 2323: keep it LAN-only, like everything else here.
+
+Fully Kiosk doesn't draw pop-ups over other apps, so pair it with TvOverlay ([docs/03](03-tv-notifications.md#tvoverlay-alternative)).
 
 ### Kite AOS
 
-1. Install the Mosquitto broker app in HA (Settings → Apps) and the MQTT integration, and create a dedicated MQTT user for the kiosk (Settings → People → Users).
-2. Install the Android TV build of Kite on the TV from the project's official releases, set its URL to `http://192.168.1.50:8123/house?tv=1`, and enter the broker address and the MQTT user's credentials in its settings, following the project's README.
-
-### TV Kiosk
-
-TV Kiosk is this kit's sister project, **coming soon** at [ha-tv-kiosk](https://github.com/mattgrechtech/ha-tv-kiosk). The app and repo names are working titles, and the links will work once it's published. What it does today:
-
-- **Settings:** a menu down the left with a *Choose a dashboard* picker, so there's no URL to type with the remote. HA's header and sidebar are hidden.
-- **Sign-in:** *Sign in once on this TV* by default. With the trusted_networks TV user below, it's a single click.
-- **Remote:** jumps between clickable items by default. An on-screen pointer is optional.
-- **Crashes:** it restarts itself.
-- **Control:** REST with a token, and MQTT with HA discovery. See its [Home Assistant set-up](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/home-assistant.md) and [API](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/api.md) guides.
-
-Planned but not built yet: background music, rotating between pages, and a mode for general websites.
+1. Install the Mosquitto broker app in HA (Settings → Apps) and the MQTT integration. Create a dedicated MQTT user for the kiosk (Settings → People → Users).
+2. Install the Android TV build of Kite on the TV from the project's official releases. Set its URL to `http://192.168.1.50:8123/house?tv=1`, and enter the broker address and the MQTT user's credentials in its settings, following the project's README.
 
 ## No login on the TV: trusted_networks (optional)
 

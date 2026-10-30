@@ -38,6 +38,9 @@ assert_backup() {
 # One package per line; '#' starts a comment.
 read_list() { sed -e 's/#.*$//' -e 's/[[:space:]]*$//' -e 's/^[[:space:]]*//' -e 's/\r$//' "$1" | grep -v '^$' || true; }
 
+# TV Kiosk (https://github.com/mattgrechtech/ha-tv-kiosk): release build, then the debug build developers install.
+TV_KIOSK_PACKAGES="io.github.mattgrechtech.tvkiosk io.github.mattgrechtech.tvkiosk.debug"
+
 add_unique_line() { touch "$1"; grep -qxF "$2" "$1" || echo "$2" >> "$1"; }
 
 usage_tv_name() { echo "Usage: $0 <tv-ip> <name> $1" >&2; exit 2; }

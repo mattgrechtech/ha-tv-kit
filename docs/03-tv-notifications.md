@@ -1,6 +1,6 @@
-# 3. Pop-ups on the TV (TvOverlay)
+# 3. Pop-ups on the TV
 
-Home Assistant sends a small web request to the TV; **TvOverlay** draws a pop-up over whatever is playing: a doorbell snapshot, "bins out tonight", "garage still open", an emergency alert.
+Home Assistant sends a small web request to the TV, and the TV draws a pop-up over whatever is playing: a doorbell snapshot, "bins out tonight", "garage still open", an emergency alert. The kit's default is the companion app **TV Kiosk**, which also shows the dashboard ([docs/04](04-tv-dashboard.md)). **TvOverlay** still works as a pop-up-only alternative.
 
 ## How it fits together
 
@@ -11,38 +11,57 @@ camera motion / bin night / garage / emergency feed
 script.tv_popup  ──reads──  sensor.tv_kit_config  (TV list, HA URL)
         │  for each TV whose media_player is on
         ▼
-rest_command.tvoverlay_notify  ──HTTP POST :5001──▶  TvOverlay on the TV
+rest_command.tvoverlay_notify  ──HTTP POST :5001/notify──▶  TV Kiosk (TvOverlay-compatible mode)
+                                                             or TvOverlay
 ```
 
-## Step 1: install TvOverlay on each TV
+The `rest_command` keeps its TvOverlay name because both apps accept the same request.
 
-1. Play Store on the TV → **TvOverlay** → Install → open it once.
-2. Let it draw over other apps:
-   ```powershell
-   .\tweaks.ps1 -Tv 192.168.1.60 -Name living-room -TvOverlay
-   ```
-   ```bash
-   ./tweaks.sh 192.168.1.60 living-room tvoverlay
-   ```
+## Step 1: a pop-up app on each TV
+
+### TV Kiosk (recommended)
+
+1. Install and set it up as in [docs/02, Step 6](02-tv-prep.md#step-6-tv-kiosk-dashboard-and-pop-ups-in-one-app). That step includes `tweaks -TvKiosk`, which allows it to draw over other apps.
+2. In TV Kiosk's settings (Pop-ups and API / Local API), turn on **TvOverlay-compatible pop-ups**. It's off by default.
 3. Test from your computer:
    ```powershell
-   .\test-popup.ps1 -Tv 192.168.1.60
+   .	est-popup.ps1 -Tv 192.168.1.60
    ```
    ```bash
    ./test-popup.sh 192.168.1.60
    ```
    A pop-up should appear top right.
 
-> **Security:** TvOverlay listens on port **5001 with no authentication**. Anything on your network can put text and images on your TV. That's acceptable on a home network you trust; put visitors and smart gadgets you don't trust on a **guest Wi-Fi** that can't reach the TVs, and never forward port 5001 from the internet.
+**With a token (better):** TV Kiosk's own API is `POST http://192.168.1.60:2424/api/v1/notify`, with an `Authorization: Bearer <token>` header and the same payload fields. It also supports pop-up buttons, such as "Open camera". To use it, point `rest_command.tvoverlay_notify` at that URL and add the header, as [its Home Assistant set-up](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/home-assistant.md#moving-the-kits-pop-ups-over) shows. Put the token in `secrets.yaml`, never in the package file. To test it: `.	est-popup.ps1 -Tv 192.168.1.60 -Token <token>` or `TV_KIOSK_TOKEN=<token> ./test-popup.sh 192.168.1.60`.
 
-Other pop-up apps exist (PiPup, "Notifications for Android TV"), but at the time of writing PiPup is no longer distributed and the other is region-locked in some countries. **Or use TV Kiosk (coming soon):** the companion app [TV Kiosk](https://github.com/mattgrechtech/ha-tv-kiosk) draws the same pop-ups, and camera snapshots show over any app, including YouTube. Two ways to send to it:
+TV Kiosk is **pre-alpha**, tested so far on one TCL Google TV. Its pop-ups show a camera **snapshot** (the `image` field), not a live stream. See its [API](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/api.md) for every pop-up field.
 
-- **No HA changes:** turn on its *TvOverlay-compatible* mode (off by default). It answers the same `POST /notify` on port 5001, so `rest_command.tvoverlay_notify` and `script.tv_popup` stay as they are. Like TvOverlay, this mode has **no token**. Only one app can use port 5001, so disable TvOverlay on that TV: `adb -s 192.168.1.60:5555 shell pm disable-user --user 0 com.tabdeveloper.tvoverlay`.
-- **With a token:** `POST http://192.168.1.60:2424/api/v1/notify` with an `Authorization: Bearer <token>` header and the same payload fields. Put the token in `secrets.yaml`, never in the package file.
+### TvOverlay (alternative)
 
-It is pre-alpha; see its [Home Assistant set-up](https://github.com/mattgrechtech/ha-tv-kiosk/blob/main/docs/home-assistant.md).
+1. Play Store on the TV → **TvOverlay** → Install → open it once.
+2. Let it draw over other apps (dry run first, then `-Apply` / `--apply`):
+   ```powershell
+   .	weaks.ps1 -Tv 192.168.1.60 -Name living-room -TvOverlay -Apply
+   ```
+   ```bash
+   ./tweaks.sh 192.168.1.60 living-room tvoverlay --apply
+   ```
+3. Test with `test-popup` as above.
 
-TvOverlay's API: `title`, `message`, `image` (URL, MDI icon or base64), `video` (RTSP/HLS), `smallIcon`, `smallIconColor`, `corner` (`top_start`, `top_end`, `bottom_start`, `bottom_end`), `duration` (seconds).
+TvOverlay's API takes these fields:
+
+- `title` and `message`
+- `image`: a URL, MDI icon or base64
+- `video`: RTSP or HLS
+- `smallIcon` and `smallIconColor`
+- `corner`: `top_start`, `top_end`, `bottom_start` or `bottom_end`
+- `duration`: seconds
+
+**Only one app per TV can use port 5001.** If you move a TV from TvOverlay to TV Kiosk, uninstall TvOverlay (Settings → Apps → TvOverlay → Uninstall; it's an app you installed yourself).
+
+> **Security:** port 5001 has **no authentication**, in TvOverlay and in TV Kiosk's compatible mode. Anything on your network can put text and images on your TV. That's acceptable on a home network you trust. Put visitors and smart gadgets you don't trust on a **guest Wi-Fi** that can't reach the TVs, and never forward ports 5001 or 2424 from the internet.
+
+Other pop-up apps exist (PiPup, "Notifications for Android TV"). At the time of writing, PiPup is no longer distributed and the other is region-locked in some countries.
 
 ## Step 2: configure the kit
 
@@ -121,7 +140,7 @@ Test without a real incident: the automation needs a real feed event, so test it
 
 | Symptom | Check |
 |---|---|
-| No pop-up at all | Run `test-popup` from your computer. If that fails, TvOverlay isn't running or lacks the overlay permission. |
+| No pop-up at all | Run `test-popup` from your computer. If that fails: the pop-up app isn't running, TV Kiosk's TvOverlay-compatible mode is off, or the app lacks the overlay permission (`status` shows it). |
 | Test works, HA doesn't | The TV's `media_player` must be **on** (the script skips TVs that are off); check the IP in `tvs`; look at the automation's trace. |
 | Pop-up without the picture | `ha_url` must be reachable **from the TV** (use the IP). Battery cameras may have no live still: use the last-recording camera. |
-| Pop-ups stopped after a TV update | Re-run the TvOverlay tweak; updates can reset the overlay permission. |
+| Pop-ups stopped after a TV update | Run `status`; updates can reset the overlay permission. Re-run the `-TvKiosk` (or `-TvOverlay`) tweak. |

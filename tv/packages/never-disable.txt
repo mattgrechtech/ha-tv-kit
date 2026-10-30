@@ -1,33 +1,48 @@
 # ha-tv-kit · packages the debloat scripts REFUSE to disable.
 # Each line is a substring: any package whose name contains it is protected.
-# Disabling these can stop the TV booting, break HDMI inputs, the remote, casting, the keyboard or updates.
+# Disabling these can stop the TV booting, break HDMI inputs, the remote, casting, the keyboard, updates,
+# adb, Home Assistant's control of the TV, or TV Kiosk.
 # Add your own vendor's critical packages here. Don't remove lines unless you know exactly why.
 
 # Android/Google core
 com.google.android.gms          # Play Services
 com.google.android.gsf          # Google Services Framework
 com.android.vending             # Play Store
-webview                         # Android System WebView
+webview                         # Android System WebView (TV Kiosk and every dashboard app render with it)
 systemui
 packageinstaller
 permissioncontroller
+ext.services                    # Android core services
 providers                       # content providers (media, TV listings, settings, ...)
 inputmethod                     # keyboards
 leanbackime                     # on-screen keyboard
 overlay                         # vendor resource overlays
 
+# adb and the network (the kit's scripts and Home Assistant reach the TV this way)
+com.android.shell               # `adb shell` runs as this package
+networkstack                    # Wi-Fi/Ethernet connectivity
+com.android.wifi
+ethernet
+mdns                            # network discovery: casting, Home Assistant finding the TV
+
 # TV basics
 settings                        # TV and vendor settings apps
-setupwraith                     # Google TV setup wizard
+setupwraith                     # Google TV setup app (it re-enables the home screen at boot anyway)
 setupwizard
-launcherx                       # Google TV home screen (it re-enables itself anyway)
+launcherx                       # Google TV home screen (disabling it doesn't stick)
 tvlauncher                      # Android TV home screen
 katniss                         # voice search (the remote's microphone button)
 mediashell                      # Chromecast built-in
 bluetooth
-remote                          # remote-control services
+remote                          # remote-control services, incl. com.google.android.tv.remote.service,
+                                # which Home Assistant's Android TV Remote integration pairs with
 tvinput                         # HDMI/tuner inputs
 tuner
 hdmi
+cec                             # HDMI-CEC (TV on/off with other devices)
 partnercustomizer               # vendor home-screen partner config
 factory                         # factory/service apps
+com.tcl.tv                      # TCL live TV, inputs and home components
+
+# Apps this kit sets up
+tvkiosk                         # TV Kiosk (release and debug builds)
